@@ -103,7 +103,7 @@ def test_delay_over_tcp():
         srv.instrument.inject("delay", seconds=0.3, count=1)
         t = time.monotonic()
         assert query(f, "*OPC?") == "1"
-        assert time.monotonic() - t >= 0.3
+        assert time.monotonic() - t >= 0.25  # Windows clocks tick in ~15 ms steps
         t = time.monotonic()
         assert query(f, "*OPC?") == "1"
         assert time.monotonic() - t < 0.2
