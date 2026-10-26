@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,14 +7,14 @@ name = "scpi-sim"
 version = "0.2.0"
 description = "Simulated SCPI lab instruments (DMM, power supply, multiplexer) on a raw TCP socket"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{name = "Ralf Steinert"}]
 requires-python = ">=3.10"
 dependencies = ["pyyaml>=6"]
 keywords = ["scpi", "simulator", "test automation", "pyvisa", "instrument", "lab"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Testing",

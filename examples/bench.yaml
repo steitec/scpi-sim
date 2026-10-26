@@ -1,0 +1,18 @@
+# A small end-of-line test bench: a 2-channel supply powers two rails of a
+# device under test; the multimeter measures them through a multiplexer.
+#
+#   scpi-sim serve --bench examples/bench.yaml
+instruments:
+  psu: {type: psu, port: 5025, channels: 2}
+  dmm: {type: dmm, port: 5026}
+  mux: {type: mux, port: 5027, channels: 16}
+loads:
+  rail_12v: {type: resistor, ohms: 24}      # 0.5 A at 12 V
+  rail_3v3: {type: resistor, ohms: 33}      # 0.1 A at 3.3 V
+wiring:
+  - psu.ch1 -> rail_12v
+  - psu.ch2 -> rail_3v3
+  - mux.101 -> rail_12v
+  - mux.102 -> rail_3v3
+  - mux.common -> dmm.input
+control: 5099

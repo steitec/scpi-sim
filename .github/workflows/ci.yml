@@ -19,3 +19,4 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
       - run: pytest -v
+      - run: pytest -v examples --scpi-bench examples/bench.yaml
