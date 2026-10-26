@@ -7,6 +7,14 @@ from scpi_sim import Multimeter, PowerSupply
 from scpi_sim.transport import InstrumentServer
 
 
+def wait_until_used(instrument, kind, timeout=5.0):
+    """Wait until the server thread has used the fault up (instead of a fixed sleep)."""
+    end = time.monotonic() + timeout
+    while kind in instrument.faults:
+        assert time.monotonic() < end, f"{kind} fault was not used"
+        time.sleep(0.005)
+
+
 def test_no_response_executes_but_stays_silent():
     p = PowerSupply()
     p.inject("no_response", count=1)
@@ -108,7 +116,7 @@ def test_delay_does_not_block_other_clients():
         srv.instrument.inject("delay", seconds=1.0, count=1)
         slow.write(b"*IDN?\n")
         slow.flush()
-        time.sleep(0.05)
+        wait_until_used(srv.instrument, "delay")
         t = time.monotonic()
         assert query(fast, "*OPC?") == "1"
         assert time.monotonic() - t < 0.5
@@ -122,7 +130,7 @@ def test_fault_hits_next_query_from_any_client():
         srv.instrument.inject("no_response", count=1)
         b.write(b"*IDN?\n")
         b.flush()
-        time.sleep(0.05)
+        wait_until_used(srv.instrument, "no_response")
         assert query(a, "*OPC?") == "1"  # b's query used the fault up
 
 
