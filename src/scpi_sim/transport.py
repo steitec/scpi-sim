@@ -133,7 +133,12 @@ class InstrumentServer:
                 line = raw.decode("utf-8", errors="replace").rstrip("\r")
                 if not line.strip():
                     continue
+                if self.instrument.take_fault("disconnect") is not None:
+                    return
                 response = self.instrument.process(line)
                 if response is not None:
+                    delay = self.instrument.take_fault("delay")
+                    if delay is not None:
+                        await asyncio.sleep(delay["seconds"])
                     writer.write(response.encode() + b"\n")
                     await writer.drain()

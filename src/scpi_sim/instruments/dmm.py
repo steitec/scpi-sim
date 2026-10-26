@@ -30,6 +30,7 @@ class InputSource(Protocol):
 class Multimeter(Instrument):
     model = "DMM"
     serial = "SIM00001"
+    SPECIFIC_FAULTS = frozenset({"offset", "noise"})
 
     def __init__(self, *, volts: float = 5.0, amps: float = 0.1, ohms: float = 1000.0,
                  noise: float = 50e-6, seed: int | None = None, source: InputSource | None = None):
@@ -67,9 +68,14 @@ class Multimeter(Instrument):
         else:
             value = {"VOLT": self.volts, "CURR": self.amps, "RES": self.ohms}[self._function]
         value = float(value)
-        reading = value * (1 + self._random.gauss(0, self.noise)) if self.noise else value
+        noise = self._faults["noise"]["sigma"] if "noise" in self._faults else self.noise
+        reading = value * (1 + self._random.gauss(0, noise)) if noise else value
         limit = self._range if self._range is not None else _FUNCTIONS[self._function][1][-1]
-        return math.copysign(OVERLOAD, reading) if abs(reading) > 1.2 * limit else reading
+        if abs(reading) > 1.2 * limit:
+            return math.copysign(OVERLOAD, reading)
+        if "offset" in self._faults:
+            reading += self._faults["offset"]["value"]
+        return reading
 
     @scpi("MEASure:VOLTage[:DC]?", max_args=2)  # [range[,resolution]]
     def meas_volt(self, call: Call) -> float:

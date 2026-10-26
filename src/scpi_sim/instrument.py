@@ -13,6 +13,7 @@ from typing import Callable, ClassVar
 
 from . import __version__
 from .errors import ScpiError
+from .faults import validate as validate_fault
 from .scpi.params import format_number, parse_number
 from .scpi.parser import parse_message
 from .scpi.pattern import HeaderPattern
@@ -78,6 +79,8 @@ class Instrument:
     model: ClassVar[str] = "GENERIC"
     serial: ClassVar[str] = "SIM00000"
     ERROR_QUEUE_SIZE = 20
+    # faults that only make sense for some instruments
+    SPECIFIC_FAULTS: ClassVar[frozenset[str]] = frozenset()
 
     _commands: ClassVar[list[tuple[HeaderPattern, str, int]]] = []
 
@@ -100,6 +103,7 @@ class Instrument:
         self._esr = PON
         self._ese = 0
         self._sre = 0
+        self._faults: dict[str, dict] = {}
 
     @property
     def idn(self) -> str:
@@ -115,6 +119,42 @@ class Instrument:
                 self._errors.append(error)
             elif self._errors[-1].code != -350:
                 self._errors[-1] = ScpiError(-350)
+
+    # --- fault injection ---------------------------------------------------------
+
+    def inject(self, kind: str, **params) -> None:
+        """Arm a fault (see scpi_sim.faults); raises ValueError for bad input."""
+        if kind in ("offset", "noise") and kind not in self.SPECIFIC_FAULTS:
+            raise ValueError(f"fault {kind!r} is not supported by the {self.model}")
+        params = validate_fault(kind, params)
+        with self._lock:
+            if kind == "error":
+                self.push_error(ScpiError(params["code"], params["message"]))
+            else:
+                self._faults[kind] = params
+
+    def clear_faults(self) -> None:
+        with self._lock:
+            self._faults.clear()
+
+    @property
+    def faults(self) -> dict[str, dict]:
+        with self._lock:
+            return {kind: dict(params) for kind, params in self._faults.items()}
+
+    def take_fault(self, kind: str) -> dict | None:
+        """Return an armed fault's parameters and use it up once (count / one-shot)."""
+        with self._lock:
+            params = self._faults.get(kind)
+            if params is None:
+                return None
+            if kind == "disconnect":
+                del self._faults[kind]
+            elif params.get("count") is not None:
+                params["count"] -= 1
+                if params["count"] <= 0:
+                    del self._faults[kind]
+            return dict(params)
 
     def process(self, line: str) -> str | None:
         """Execute one program message; return the joined query responses."""
@@ -134,6 +174,8 @@ class Instrument:
                     continue
                 if response is not None:
                     responses.append(response)
+            if responses and self.take_fault("no_response") is not None:
+                return None
         return ";".join(responses) if responses else None
 
     def _dispatch(self, header: tuple[str, ...], is_query: bool, args: tuple[str, ...]) -> str | None:
@@ -149,7 +191,8 @@ class Instrument:
 
     @scpi("*IDN?")
     def _idn(self, call: Call) -> str:
-        return self.idn
+        fault = self._faults.get("idn")
+        return fault["value"] if fault else self.idn
 
     @scpi("*RST", max_args=0)
     def _rst(self, call: Call) -> None:
