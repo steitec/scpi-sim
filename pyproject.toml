@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scpi-sim"
+version = "0.1.0"
+description = "Simulated SCPI lab instruments (DMM, power supply, multiplexer) on a raw TCP socket"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Ralf Steinert"}]
+requires-python = ">=3.10"
+dependencies = []
+keywords = ["scpi", "simulator", "test automation", "pyvisa", "instrument", "lab"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Testing",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyvisa>=1.13", "pyvisa-py>=0.7"]
+
+[project.scripts]
+scpi-sim = "scpi_sim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
