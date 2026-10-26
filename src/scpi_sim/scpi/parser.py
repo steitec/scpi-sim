@@ -57,10 +57,8 @@ def _balanced(text: str) -> bool:
 
 
 def _parse_unit(unit: str, path: tuple[str, ...]) -> Command:
-    header, _, rest = unit.partition(" ")
-    if "\t" in header:
-        header, _, more = header.partition("\t")
-        rest = more + " " + rest
+    header, *more = unit.split(None, 1)
+    rest = more[0] if more else ""
     absolute = header.startswith(":")
     if absolute:
         header = header[1:]
