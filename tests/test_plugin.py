@@ -85,3 +85,34 @@ def test_config_error_fails_setup(pytester):
     result = pytester.runpytest("--scpi-bench", "bench.yaml")
     result.assert_outcomes(errors=1)
     result.stdout.fnmatch_lines(["*scope*"])
+
+
+def test_factory_path_relative_to_rootdir(pytester):
+    pytester.makefile(".yaml", bench=BASIC)
+    pytester.makeini("[pytest]\n")
+    sub = pytester.mkdir("sub")
+    pytester.makepyfile("""
+        def test_it(scpi_bench_factory, monkeypatch):
+            monkeypatch.chdir("sub")
+            b = scpi_bench_factory("bench.yaml")
+            assert b.port("mux") > 0
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)
+
+
+def test_pool_stops_every_bench_even_if_one_fails():
+    import pytest
+    import yaml
+    from scpi_sim.pytest_plugin import BenchPool
+
+    pool = BenchPool(root=None)
+    first = pool.start(yaml.safe_load(BASIC))
+    second = pool.start(yaml.safe_load(BASIC))
+    stopped = []
+    first.stop = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+    original = second.stop
+    second.stop = lambda: (stopped.append(True), original())
+    with pytest.raises(RuntimeError, match="boom"):
+        pool.stop_all()
+    assert stopped == [True]
+    type(first).stop(first)  # the replaced stop() never ran: stop the real servers
