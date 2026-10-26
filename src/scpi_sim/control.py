@@ -75,6 +75,8 @@ class ControlServer:
             return self._handle(request)
         except ValueError as error:  # includes json.JSONDecodeError
             return {"ok": False, "error": str(error)}
+        except Exception as error:  # never drop the connection with a traceback
+            return {"ok": False, "error": f"{type(error).__name__}: {error}"}
 
     def _handle(self, request: dict) -> dict[str, Any]:
         instruments = self.bench.instruments

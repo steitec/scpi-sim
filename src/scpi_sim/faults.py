@@ -15,41 +15,58 @@ noise          sigma (>= 0)                         multimeter only: replaces th
 
 from __future__ import annotations
 
+import math
 from typing import Any, Callable
 
 _REQUIRED = object()
 
 
+def _finite(value: Any) -> float:
+    if isinstance(value, bool):
+        raise ValueError("must be a number")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("must be a finite number")
+    return number
+
+
+def _whole(value: Any) -> int:
+    number = _finite(value)
+    if number != int(number):
+        raise ValueError("must be a whole number")
+    return int(number)
+
+
 def _count(value: Any) -> int | None:
     if value is None:
         return None
-    if isinstance(value, bool) or int(value) != value or value < 1:
+    count = _whole(value)
+    if count < 1:
         raise ValueError("must be a whole number >= 1")
-    return int(value)
+    return count
 
 
 def _positive(value: Any) -> float:
-    if isinstance(value, bool) or float(value) <= 0:
+    if _finite(value) <= 0:
         raise ValueError("must be > 0")
     return float(value)
 
 
 def _non_negative(value: Any) -> float:
-    if isinstance(value, bool) or float(value) < 0:
+    if _finite(value) < 0:
         raise ValueError("must be >= 0")
     return float(value)
 
 
 def _negative_int(value: Any) -> int:
-    if isinstance(value, bool) or int(value) != value or value >= 0:
+    code = _whole(value)
+    if code >= 0:
         raise ValueError("must be a negative error code")
-    return int(value)
+    return code
 
 
 def _number(value: Any) -> float:
-    if isinstance(value, bool):
-        raise ValueError("must be a number")
-    return float(value)
+    return _finite(value)
 
 
 def _text(value: Any) -> str:

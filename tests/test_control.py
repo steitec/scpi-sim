@@ -48,3 +48,14 @@ def test_error_message_names_instrument():
 def test_no_control_port_no_server():
     with Bench.from_dict(yaml.safe_load(BASIC)) as b:
         assert b.control_port is None
+
+
+def test_any_failure_is_an_error_answer(monkeypatch):
+    with bench_with_control() as b:
+        port = b.control_port
+        r = send_control({"instrument": "dmm", "inject": "no_response", "params": {"count": 1e400}}, port=port)
+        assert r["ok"] is False
+        monkeypatch.setattr(b.dmm, "clear_faults", lambda: 1 / 0)
+        r = send_control({"instrument": "dmm", "clear": True}, port=port)
+        assert r["ok"] is False and "ZeroDivisionError" in r["error"]
+        assert send_control({"list": True}, port=port)["ok"] is True

@@ -124,3 +124,13 @@ def test_fault_hits_next_query_from_any_client():
         b.flush()
         time.sleep(0.05)
         assert query(a, "*OPC?") == "1"  # b's query used the fault up
+
+
+@pytest.mark.parametrize("kind,params", [
+    ("delay", {"seconds": float("nan")}), ("delay", {"seconds": float("inf")}),
+    ("offset", {"value": float("nan")}), ("noise", {"sigma": float("inf")}),
+    ("no_response", {"count": float("inf")}), ("no_response", {"count": "abc"}),
+])
+def test_non_finite_values_rejected(kind, params):
+    with pytest.raises(ValueError):
+        Multimeter().inject(kind, **params)
