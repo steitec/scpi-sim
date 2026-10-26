@@ -35,10 +35,15 @@ class Call:
         return self.args[i] if i < len(self.args) else default
 
 
-def scpi(pattern: str) -> Callable:
-    """Register a method as the handler for a SCPI header pattern."""
+def scpi(pattern: str, max_args: int | None = None) -> Callable:
+    """Register a method as the handler for a SCPI header pattern.
+
+    More than ``max_args`` parameters give -108; the default is 0 for a query
+    and 1 for a setting command.
+    """
     def decorate(method: Callable) -> Callable:
         method._scpi_pattern = HeaderPattern(pattern)
+        method._scpi_max_args = max_args if max_args is not None else (0 if pattern.endswith("?") else 1)
         return method
     return decorate
 
@@ -74,7 +79,7 @@ class Instrument:
     serial: ClassVar[str] = "SIM00000"
     ERROR_QUEUE_SIZE = 20
 
-    _commands: ClassVar[list[tuple[HeaderPattern, str]]] = []
+    _commands: ClassVar[list[tuple[HeaderPattern, str, int]]] = []
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -86,7 +91,7 @@ class Instrument:
                 seen.add(name)
                 pattern = getattr(attr, "_scpi_pattern", None)
                 if pattern is not None:
-                    commands.append((pattern, name))
+                    commands.append((pattern, name, attr._scpi_max_args))
         cls._commands = commands
 
     def __init__(self) -> None:
@@ -132,9 +137,11 @@ class Instrument:
         return ";".join(responses) if responses else None
 
     def _dispatch(self, header: tuple[str, ...], is_query: bool, args: tuple[str, ...]) -> str | None:
-        for pattern, name in self._commands:
+        for pattern, name, max_args in self._commands:
             suffixes = pattern.match(header, is_query)
             if suffixes is not None:
+                if len(args) > max_args:
+                    raise ScpiError(-108)
                 return _format(getattr(self, name)(Call(args, suffixes)))
         raise ScpiError(-113)
 
@@ -144,11 +151,11 @@ class Instrument:
     def _idn(self, call: Call) -> str:
         return self.idn
 
-    @scpi("*RST")
+    @scpi("*RST", max_args=0)
     def _rst(self, call: Call) -> None:
         self.reset()
 
-    @scpi("*CLS")
+    @scpi("*CLS", max_args=0)
     def _cls(self, call: Call) -> None:
         self._errors.clear()
         self._esr = 0
@@ -185,7 +192,7 @@ class Instrument:
             stb |= 64
         return stb
 
-    @scpi("*OPC")
+    @scpi("*OPC", max_args=0)
     def _opc(self, call: Call) -> None:
         self._esr |= OPC  # every operation completes immediately
 
@@ -193,7 +200,7 @@ class Instrument:
     def _opc_query(self, call: Call) -> int:
         return 1
 
-    @scpi("*WAI")
+    @scpi("*WAI", max_args=0)
     def _wai(self, call: Call) -> None:
         pass
 

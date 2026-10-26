@@ -51,30 +51,30 @@ class Multimeter(Instrument):
         limit = self._range if self._range is not None else _FUNCTIONS[self._function][1][-1]
         return OVERLOAD if abs(reading) > 1.2 * limit else reading
 
-    @scpi("MEASure:VOLTage[:DC]?")
+    @scpi("MEASure:VOLTage[:DC]?", max_args=2)  # [range[,resolution]]
     def meas_volt(self, call: Call) -> float:
         self._configure("VOLT", call.optional_arg(0))
         return self._read()
 
-    @scpi("MEASure:CURRent[:DC]?")
+    @scpi("MEASure:CURRent[:DC]?", max_args=2)
     def meas_curr(self, call: Call) -> float:
         self._configure("CURR", call.optional_arg(0))
         return self._read()
 
-    @scpi("MEASure:RESistance?")
+    @scpi("MEASure:RESistance?", max_args=2)
     def meas_res(self, call: Call) -> float:
         self._configure("RES", call.optional_arg(0))
         return self._read()
 
-    @scpi("CONFigure:VOLTage[:DC]")
+    @scpi("CONFigure:VOLTage[:DC]", max_args=2)
     def conf_volt(self, call: Call) -> None:
         self._configure("VOLT", call.optional_arg(0))
 
-    @scpi("CONFigure:CURRent[:DC]")
+    @scpi("CONFigure:CURRent[:DC]", max_args=2)
     def conf_curr(self, call: Call) -> None:
         self._configure("CURR", call.optional_arg(0))
 
-    @scpi("CONFigure:RESistance")
+    @scpi("CONFigure:RESistance", max_args=2)
     def conf_res(self, call: Call) -> None:
         self._configure("RES", call.optional_arg(0))
 

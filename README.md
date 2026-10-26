@@ -126,7 +126,8 @@ Options: `--volts 5.0`, `--amps 0.1`, `--ohms 1000` (the simulated input),
 (`500 mV`, `250 mA`).
 
 Options: `--channels 1`, `--load OHMS` (resistive load on every output;
-without it the outputs are open and deliver no current).
+without it the outputs are open and deliver no current; `--load 0` is a short
+circuit, which drives the output straight into the current limit).
 
 ### Multiplexer — `scpi-sim serve mux`
 
@@ -161,6 +162,7 @@ Error codes:
 |---|---|
 | -102 | Syntax error |
 | -104 | Data type error |
+| -108 | Parameter not allowed (more parameters than the command takes) |
 | -109 | Missing parameter |
 | -113 | Undefined header |
 | -114 | Header suffix out of range |

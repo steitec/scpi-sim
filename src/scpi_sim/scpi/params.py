@@ -49,8 +49,12 @@ def parse_bool(arg: str) -> bool:
     raise ScpiError(-224)
 
 
-def parse_channel_list(arg: str) -> list[int]:
-    """``(@101,103:105)`` -> ``[101, 103, 104, 105]``."""
+def parse_channel_list(arg: str, valid: range | None = None) -> list[int]:
+    """``(@101,103:105)`` -> ``[101, 103, 104, 105]``.
+
+    With ``valid``, every channel outside it gives -222 — checked on the range
+    bounds before expanding, so ``(@1:999999999)`` costs nothing.
+    """
     m = re.fullmatch(r"\(\s*@([\d\s,:]+)\)", arg.strip())
     if not m:
         raise ScpiError(-224)
@@ -60,6 +64,8 @@ def parse_channel_list(arg: str) -> list[int]:
         if len(bounds) > 2 or not all(b.isdigit() for b in bounds):
             raise ScpiError(-224)
         first, last = int(bounds[0]), int(bounds[-1])
+        if valid is not None and (first not in valid or last not in valid):
+            raise ScpiError(-222)
         step = 1 if last >= first else -1
         channels.extend(range(first, last + step, step))
     return channels

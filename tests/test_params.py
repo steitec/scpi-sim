@@ -48,3 +48,9 @@ def test_channel_list():
 def test_format_number():
     assert format_number(5) == "+5.00000000E+00"
     assert format_number(-0.0012) == "-1.20000000E-03"
+
+
+def test_channel_list_bounds_checked_before_expanding():
+    with pytest.raises(ScpiError, match="-222"):
+        parse_channel_list("(@101:999999999)", valid=range(101, 117))
+    assert parse_channel_list("(@116:115)", valid=range(101, 117)) == [116, 115]

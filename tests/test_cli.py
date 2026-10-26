@@ -76,3 +76,10 @@ def test_version(capsys):
     with pytest.raises(SystemExit):
         main(["--version"])
     assert "0.1.0" in capsys.readouterr().out
+
+
+def test_negative_load_exit_2():
+    # subprocess with timeout: without validation the server would start and block
+    r = subprocess.run([sys.executable, "-m", "scpi_sim.cli", "serve", "psu", "--load", "-5", "--port", "0"],
+                       capture_output=True, text=True, timeout=10)
+    assert r.returncode == 2 and "load" in r.stderr

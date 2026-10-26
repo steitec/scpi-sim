@@ -41,3 +41,12 @@ def test_channel_count_validated():
 
 def test_idn():
     assert Multiplexer().process("*IDN?") == "scpi-sim,MUX,SIM00003,0.1.0"
+
+
+def test_huge_channel_range_rejected_quickly():
+    import time
+    m = Multiplexer()
+    start = time.monotonic()
+    m.process("ROUT:CLOS (@101:3000000)")
+    assert time.monotonic() - start < 0.05
+    assert m.process("SYST:ERR?").startswith("-222")

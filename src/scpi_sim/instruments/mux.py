@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from ..errors import ScpiError
 from ..instrument import Call, Instrument, scpi
 from ..scpi.params import parse_channel_list
 
@@ -23,10 +22,7 @@ class Multiplexer(Instrument):
         self.closed.clear()
 
     def _channels(self, call: Call) -> list[int]:
-        channels = parse_channel_list(call.arg(0))
-        if any(ch not in self.valid_channels for ch in channels):
-            raise ScpiError(-222)
-        return channels
+        return parse_channel_list(call.arg(0), valid=self.valid_channels)
 
     @scpi("ROUTe:CLOSe")
     def close(self, call: Call) -> None:
@@ -36,11 +32,11 @@ class Multiplexer(Instrument):
     def open(self, call: Call) -> None:
         self.closed.difference_update(self._channels(call))
 
-    @scpi("ROUTe:CLOSe?")
+    @scpi("ROUTe:CLOSe?", max_args=1)
     def close_query(self, call: Call) -> list[bool]:
         return [ch in self.closed for ch in self._channels(call)]
 
-    @scpi("ROUTe:OPEN?")
+    @scpi("ROUTe:OPEN?", max_args=1)
     def open_query(self, call: Call) -> list[bool]:
         return [ch not in self.closed for ch in self._channels(call)]
 
@@ -48,6 +44,6 @@ class Multiplexer(Instrument):
     def close_state(self, call: Call) -> str:
         return "(@" + ",".join(str(ch) for ch in sorted(self.closed)) + ")"
 
-    @scpi("ROUTe:OPEN:ALL")
+    @scpi("ROUTe:OPEN:ALL", max_args=0)
     def open_all(self, call: Call) -> None:
         self.closed.clear()

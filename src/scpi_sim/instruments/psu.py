@@ -29,6 +29,8 @@ class PowerSupply(Instrument):
         super().__init__()
         if channels < 1:
             raise ValueError("channels must be at least 1")
+        if load_ohms is not None and load_ohms < 0:
+            raise ValueError("load must not be negative")
         self.channel_count = channels
         self.load_ohms = load_ohms
         self.max_volts = max_volts
@@ -54,6 +56,8 @@ class PowerSupply(Instrument):
             return 0.0, 0.0, "OFF"
         if self.load_ohms is None:
             return channel.volts, 0.0, "CV"
+        if self.load_ohms == 0:  # short circuit: any voltage drives it into the current limit
+            return (0.0, channel.amps, "CC") if channel.volts > 0 else (0.0, 0.0, "CV")
         amps = channel.volts / self.load_ohms
         if amps > channel.amps:
             return channel.amps * self.load_ohms, channel.amps, "CC"
@@ -101,7 +105,7 @@ class PowerSupply(Instrument):
         self._channel().volts = parse_number(call.arg(0), "V", minimum=0.0,
                                              maximum=self.max_volts, default=DEFAULT_VOLTS)
 
-    @scpi("[SOURce:]VOLTage[:LEVel][:IMMediate][:AMPLitude]?")
+    @scpi("[SOURce:]VOLTage[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def volt_query(self, call: Call) -> float:
         return self._limit_query(call, self._channel().volts, self.max_volts)
 
@@ -110,7 +114,7 @@ class PowerSupply(Instrument):
         self._channel().amps = parse_number(call.arg(0), "A", minimum=0.0,
                                             maximum=self.max_amps, default=DEFAULT_AMPS)
 
-    @scpi("[SOURce:]CURRent[:LEVel][:IMMediate][:AMPLitude]?")
+    @scpi("[SOURce:]CURRent[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def curr_query(self, call: Call) -> float:
         return self._limit_query(call, self._channel().amps, self.max_amps)
 

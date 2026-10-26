@@ -58,3 +58,27 @@ def test_rst():
 
 def test_idn():
     assert PowerSupply().process("*IDN?") == "scpi-sim,PSU,SIM00002,0.1.0"
+
+
+def test_extra_parameter_not_silently_ignored():
+    p = PowerSupply()
+    p.process("VOLT 5,1")
+    assert p.process("SYST:ERR?") == '-108,"Parameter not allowed"'
+    p.process("OUTP ON,OFF")
+    assert p.process("SYST:ERR?") == '-108,"Parameter not allowed"'
+    assert p.process("VOLT?;:OUTP?") == "+0.00000000E+00;0"
+
+
+def test_short_circuit_goes_into_current_limit():
+    p = PowerSupply(load_ohms=0)
+    p.process("VOLT 1;:OUTP ON")
+    assert p.process("MEAS:VOLT?;:MEAS:CURR?;:OUTP:MODE?") == "+0.00000000E+00;+1.00000000E-01;CC"
+    p.process("VOLT 0")
+    assert p.process("MEAS:CURR?;:OUTP:MODE?") == "+0.00000000E+00;CV"
+    assert p.process("SYST:ERR?") == '0,"No error"'
+
+
+def test_negative_load_rejected():
+    import pytest
+    with pytest.raises(ValueError):
+        PowerSupply(load_ohms=-5)

@@ -114,3 +114,10 @@ def test_ese_out_of_range():
 def test_misc_common_commands():
     d = Dummy()
     assert d.process("*TST?;*WAI;SYST:VERS?") == "0;1999.0"
+
+
+def test_extra_parameters_rejected():
+    d = Dummy()
+    for message in ["LEV 1,2", "*RST 5", "*IDN? 5", "LEV? 1"]:
+        assert d.process(message) is None
+        assert d.process("SYST:ERR?") == '-108,"Parameter not allowed"', message

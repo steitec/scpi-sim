@@ -67,3 +67,9 @@ def test_python_side_input_change():
 
 def test_idn():
     assert Multimeter().process("*IDN?") == "scpi-sim,DMM,SIM00001,0.1.0"
+
+
+def test_measure_accepts_resolution_argument():
+    d = Multimeter(volts=3.3, noise=0)
+    assert d.process("MEAS:VOLT? 10,0.001") == "+3.30000000E+00"
+    assert d.process("SYST:ERR?") == '0,"No error"'
