@@ -122,3 +122,36 @@ def read_until(sock, expected, timeout=2.0):
             break
         data += chunk
     return data
+
+
+class OverlapBoard(Board):
+    """Counts how often update() runs on two threads at the same time."""
+
+    def __init__(self):
+        super().__init__()
+        self.inside = 0
+        self.overlaps = 0
+
+    def update(self):
+        self.inside += 1
+        if self.inside > 1:
+            self.overlaps += 1
+        _time.sleep(0.001)
+        super().update()
+        self.inside -= 1
+
+
+class LazyBoard(Device):
+    """Forgets super().__init__()."""
+
+    terminals = {"vin": "input"}
+
+    def __init__(self):
+        pass
+
+
+def wait_for_clients(device, count=1, timeout=5.0):
+    end = _time.monotonic() + timeout
+    while device.console.clients < count:
+        assert _time.monotonic() < end, "console client did not attach"
+        _time.sleep(0.005)

@@ -20,7 +20,7 @@ import yaml
 
 from .console import ConsoleServer
 from .control import ControlServer
-from .device import Device
+from .device import Console, Device
 from .errors import ScpiError
 from .instrument import Instrument
 from .instruments import Multimeter, Multiplexer, PowerSupply
@@ -160,6 +160,7 @@ class Bench:
         self._sources: dict[str, tuple[PowerSupply | Device, int | str]] = {}
         self._device_inputs: dict[str, _DeviceInput] = {}
         self._update_failed: set[str] = set()
+        self._update_lock = threading.Lock()  # one device update at a time, across instrument threads
         self._servers: dict[str, InstrumentServer] = {}
         self._control: ControlServer | None = None
         self._consoles: dict[str, ConsoleServer] = {}
@@ -276,6 +277,9 @@ class Bench:
             if not isinstance(node, str) or not _NODE.fullmatch(node) or node in self.instruments:
                 raise BenchError(f"{where}: a load sits on a node name (letters, digits, '_'), "
                                  "not on an instrument")
+            if node in self.devices:
+                raise BenchError(f"{where}: {node!r} is a device; put the load on a node and wire "
+                                 "that node to a device terminal")
             if not isinstance(settings, dict):
                 raise BenchError(f"{where}: settings must be a mapping")
             kind = settings.get("type")
@@ -340,6 +344,9 @@ class Bench:
                 device = factory(**args)
             except Exception as error:
                 raise BenchError(f"{where}: cannot create {target}: {error}") from None
+            if not isinstance(getattr(device, "console", None), Console):
+                raise BenchError(f"{where}: {target} is not set up as a Device -- "
+                                 "does its __init__ call super().__init__()?")
             if "console" in settings:
                 port = settings["console"]
                 if not isinstance(port, int) or isinstance(port, bool) or not 0 <= port <= 65535:
@@ -361,6 +368,9 @@ class Bench:
                 raise BenchError(f"{where}: invalid node name {text!r}")
             if text in self.instruments:
                 raise BenchError(f"{where}: {text!r} is an instrument, name one of its terminals")
+            if text in self.devices:
+                raise BenchError(f"{where}: {text!r} is a device, name one of its terminals "
+                                 f"({', '.join(self.devices[text].terminals)})")
             return text
         name, _, pin = text.partition(".")
         if name in self.devices:
@@ -447,6 +457,10 @@ class Bench:
         return 0.0
 
     def _update_devices(self) -> None:
+        with self._update_lock:
+            self._update_each()
+
+    def _update_each(self) -> None:
         for name, device in self.devices.items():
             try:
                 device.update()
@@ -477,15 +491,19 @@ class Bench:
         self.host = host
 
     def stop(self) -> None:
-        if self._control is not None:
-            self._control.stop()
-            self._control = None
-        for console in self._consoles.values():
-            console.stop()
+        """Stop every server; if one fails, still stop the others, then re-raise."""
+        servers = [*([self._control] if self._control else []), *self._consoles.values(), *self._servers.values()]
+        self._control = None
         self._consoles.clear()
-        for server in self._servers.values():
-            server.stop()
         self._servers.clear()
+        failure = None
+        for server in servers:
+            try:
+                server.stop()
+            except Exception as error:
+                failure = failure or error
+        if failure is not None:
+            raise failure
 
     def port(self, name: str) -> int:
         return self._servers[name].port

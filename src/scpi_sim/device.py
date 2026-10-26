@@ -5,9 +5,12 @@ A device has named terminals. An *input* terminal draws current from its net
 After every instrument message the bench calls ``update()``, so a device can
 notice its input voltage rising and start its own timeline (boot, inrush).
 
-Methods the bench calls (``current``, ``voltage``, ``update``) run in the
-instruments' threads: they must not block. ``current()`` must not call
-``input_voltage()`` -- the input voltage is what is being computed from it.
+Methods the bench calls run in other threads and must not block:
+``update()`` after every instrument message (the bench runs one ``update()`` at a
+time), ``current()`` and ``voltage()`` whenever an instrument needs them -- also
+while ``update()`` or your own threads run, so read shared state once into a
+local. ``console_line()`` runs on the console's event loop. ``current()`` must
+not call ``input_voltage()`` -- the input voltage is what is being computed from it.
 """
 
 from __future__ import annotations
@@ -39,7 +42,15 @@ class Console:
             if sink in self._sinks:
                 self._sinks.remove(sink)
 
+    @property
+    def clients(self) -> int:
+        """How many listeners (console clients) are attached right now."""
+        with self._lock:
+            return len(self._sinks)
+
     def write(self, text: str) -> None:
+        if not isinstance(text, str):
+            raise TypeError(f"console.write() takes str, not {type(text).__name__}")
         with self._lock:
             sinks = list(self._sinks)
         for sink in sinks:

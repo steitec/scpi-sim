@@ -120,3 +120,48 @@ def test_update_failure_reported_once(capsys):
         assert b.psu.process("*OPC?") == "1"
     err = capsys.readouterr().err
     assert err.count("update() failed") == 1 and "board" in err
+
+
+def test_updates_are_serialised_across_instrument_threads():
+    import threading
+    b = board_bench(cls="helpers:OverlapBoard")
+    stop = time.monotonic() + 0.5
+    workers = [threading.Thread(target=lambda inst=inst: [inst.process("*OPC?") for _ in
+                                                         iter(lambda: time.monotonic() < stop, False)])
+               for inst in (b.psu, b.dmm, b.mux)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    assert b.board.overlaps == 0
+
+
+def test_device_name_as_bare_node_rejected():
+    with pytest.raises(BenchError, match="'board' is a device"):
+        board_bench(extra_wiring=["psu.ch1 -> board"])
+
+
+def test_device_name_as_load_node_rejected():
+    with pytest.raises(BenchError, match="'board' is a device"):
+        Bench.from_dict({"instruments": {"psu": {"type": "psu", "port": 0}},
+                         "devices": {"board": {"class": "helpers:Board"}},
+                         "loads": {"board": {"type": "resistor", "ohms": 1}},
+                         "wiring": ["psu.ch1 -> board.vin"]})
+
+
+def test_device_without_super_init_is_reported():
+    with pytest.raises(BenchError, match=r"super\(\).__init__\(\)"):
+        Bench.from_dict({"instruments": {"psu": {"type": "psu", "port": 0}},
+                         "devices": {"lazy": {"class": "helpers:LazyBoard"}}})
+
+
+def test_stop_stops_every_server_even_if_one_fails():
+    b = board_bench()
+    b.start()
+    servers = list(b._servers.values())
+    real_stop = servers[0].stop
+    servers[0].stop = lambda: (_ for _ in ()).throw(RuntimeError("stuck"))
+    with pytest.raises(RuntimeError, match="stuck"):
+        b.stop()
+    assert all(s._loop is None for s in servers[1:])
+    real_stop()

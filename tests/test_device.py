@@ -71,3 +71,15 @@ def test_each_device_has_its_own_console():
 def test_bad_terminal_spec_rejected(terminals):
     with pytest.raises(TypeError):
         type("Broken", (Device,), {"terminals": terminals})
+
+
+def test_console_write_needs_text():
+    with pytest.raises(TypeError):
+        Console().write(b"raw\n")
+
+
+def test_console_counts_clients():
+    c = Console()
+    assert c.clients == 0
+    c.attach(print)
+    assert c.clients == 1
