@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Callable
+import contextlib
+from typing import Callable, ContextManager
 
 from ..instrument import Call, Instrument, scpi
 from ..scpi.params import parse_channel_list
@@ -21,24 +22,32 @@ class Multiplexer(Instrument):
         # called with the would-be set of closed channels before ROUT:CLOS changes
         # anything; may raise ScpiError to refuse (used by the bench)
         self.before_close: Callable[[set[int]], None] | None = None
+        # held around check + switch; a bench shares one lock between all its multiplexers
+        self.switch_lock: ContextManager = contextlib.nullcontext()
+        # ``closed`` is only ever replaced, never changed in place, so other
+        # threads (the bench) can read it without this instrument's lock
 
     def reset(self) -> None:
         super().reset()
-        self.closed.clear()
+        self.closed = set()
 
     def _channels(self, call: Call) -> list[int]:
         return parse_channel_list(call.arg(0), valid=self.valid_channels)
 
     @scpi("ROUTe:CLOSe")
     def close(self, call: Call) -> None:
-        closed = self.closed | set(self._channels(call))
-        if self.before_close is not None:
-            self.before_close(closed)
-        self.closed = closed
+        channels = set(self._channels(call))
+        with self.switch_lock:
+            closed = self.closed | channels
+            if self.before_close is not None:
+                self.before_close(closed)
+            self.closed = closed
 
     @scpi("ROUTe:OPEN")
     def open(self, call: Call) -> None:
-        self.closed.difference_update(self._channels(call))
+        channels = set(self._channels(call))
+        with self.switch_lock:
+            self.closed = self.closed - channels
 
     @scpi("ROUTe:CLOSe?", max_args=1)
     def close_query(self, call: Call) -> list[bool]:
@@ -54,4 +63,5 @@ class Multiplexer(Instrument):
 
     @scpi("ROUTe:OPEN:ALL", max_args=0)
     def open_all(self, call: Call) -> None:
-        self.closed.clear()
+        with self.switch_lock:
+            self.closed = set()

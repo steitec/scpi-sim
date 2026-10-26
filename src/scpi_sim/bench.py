@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib
 import math
 import re
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -103,6 +104,7 @@ class Bench:
         self._sources: dict[str, tuple[PowerSupply, int]] = {}  # terminal -> (psu, channel)
         self._servers: dict[str, InstrumentServer] = {}
         self._control: ControlServer | None = None
+        self._switch_lock = threading.Lock()  # relay check + switch, across all multiplexers
 
     # --- construction -------------------------------------------------------------
 
@@ -175,6 +177,7 @@ class Bench:
                 instrument.source = _DmmInput(self, f"{name}.input")
             elif isinstance(instrument, Multiplexer):
                 instrument.before_close = lambda closed, mux=name: self._check_relays(mux, closed)
+                instrument.switch_lock = self._switch_lock
 
     def _add_loads(self, config) -> None:
         if not isinstance(config, dict):
@@ -267,7 +270,7 @@ class Bench:
                 closed = instrument.closed
                 if closed_override is not None and closed_override[0] == name:
                     closed = closed_override[1]
-                for channel in closed:
+                for channel in tuple(closed):
                     nets.join(f"{name}.{channel}", f"{name}.common")
         return nets
 

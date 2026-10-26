@@ -49,21 +49,25 @@ class PowerSupply(Instrument):
 
     # --- helpers --------------------------------------------------------------
 
-    def _channel(self, suffix: int | None = None) -> _Channel:
+    def _number(self, suffix: int | None = None) -> int:
         number = self._selected if suffix is None else suffix
         if not 1 <= number <= self.channel_count:
             raise ScpiError(-114)
-        return self._channels[number - 1]
+        return number
 
-    def _output(self, channel: _Channel) -> tuple[float, float, str]:
-        """Actual (volts, amps, mode) at the output terminals."""
-        if not channel.output:
-            return 0.0, 0.0, "OFF"
-        return operating_point(self.loads[self._channels.index(channel)], channel.volts, channel.amps)
+    def _channel(self, suffix: int | None = None) -> _Channel:
+        return self._channels[self._number(suffix) - 1]
 
     def output(self, number: int) -> tuple[float, float, str]:
-        """(volts, amps, mode) at output ``number`` (1-based), for the bench."""
-        return self._output(self._channels[number - 1])
+        """Actual (volts, amps, mode) at output ``number`` (1-based).
+
+        Also called by a bench from other threads: ``_channels`` is only ever
+        replaced (``*RST``), so one list is read consistently.
+        """
+        channel = self._channels[number - 1]
+        if not channel.output:
+            return 0.0, 0.0, "OFF"
+        return operating_point(self.loads[number - 1], channel.volts, channel.amps)
 
     def _limit_query(self, call: Call, setting: float, maximum: float, default: float) -> float:
         arg = call.optional_arg(0)
@@ -134,14 +138,14 @@ class PowerSupply(Instrument):
 
     @scpi("OUTPut#:MODE?")
     def outp_mode(self, call: Call) -> str:
-        return self._output(self._channel(call.suffixes[0]))[2]
+        return self.output(self._number(call.suffixes[0]))[2]
 
     # --- measurements -----------------------------------------------------------
 
     @scpi("MEASure:VOLTage[:DC]?")
     def meas_volt(self, call: Call) -> float:
-        return self._output(self._channel())[0]
+        return self.output(self._number())[0]
 
     @scpi("MEASure:CURRent[:DC]?")
     def meas_curr(self, call: Call) -> float:
-        return self._output(self._channel())[1]
+        return self.output(self._number())[1]
