@@ -1,0 +1,18 @@
+# A sensor board as device under test: the supply powers it, the multimeter
+# checks its 3.3 V rail through the multiplexer, its console is on port 5028.
+#
+#   scpi-sim serve --bench examples/devices/bench.yaml
+#   pytest examples/devices --scpi-bench examples/devices/bench.yaml
+instruments:
+  psu: {type: psu, port: 5025}
+  dmm: {type: dmm, port: 5026}
+  mux: {type: mux, port: 5027}
+devices:
+  board:
+    class: "sensor_board:SensorBoard"     # examples/devices/sensor_board.py
+    args: {serial: "SB-24-0042"}
+    console: 5028
+wiring:
+  - psu.ch1 -> board.vin
+  - mux.101 -> board.3V3
+  - mux.common -> dmm.input

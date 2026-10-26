@@ -1,6 +1,6 @@
 """Testing instrument code against a simulated bench.
 
-    pytest examples --scpi-bench examples/bench.yaml
+    pytest examples/test_example.py --scpi-bench examples/bench.yaml
 
 ``measure_rail`` stands for your own test-station code; the tests run it
 against simulated instruments, including a dead multimeter.

@@ -232,12 +232,100 @@ $ scpi-sim query "INST:NSEL 1;:MEAS:CURR?"
 - Two supply outputs never end up on the same net: in the file that is an
   error, and a `ROUT:CLOS` that would connect them is refused with
   `-221,"Settings conflict"`.
+- **Devices**: your own device under test, written in Python, with its own
+  terminals and an optional console port — see
+  [Writing your own device](#writing-your-own-device).
 - Mistakes in the file are reported with the offending line and exit code 2.
 
 Every instrument has its own connection, so a command sent to one
 instrument can still be in flight when you query another one. Finish
 commands with `*OPC?` before measuring elsewhere, as you would on a real
 bench (`ROUT:CLOS (@101);*OPC?`).
+
+## Writing your own device
+
+A device under test is a Python class with terminals: an **input** draws
+current from the net it is wired to, an **output** drives its net like a
+supply. The bench calls `update()` after every instrument message, so the
+device notices when its supply switches on, and it can talk over a console
+port like a serial line behind a terminal server.
+
+```python
+import threading, time
+from scpi_sim import Device
+
+class SensorBoard(Device):
+    terminals = {"vin": "input", "3V3": "output"}
+
+    def __init__(self, serial="SB-00-0001"):
+        super().__init__()
+        self.serial, self.powered_at = serial, None
+
+    def update(self):                          # after every instrument message
+        powered = self.input_voltage("vin") >= 4.5
+        if powered and self.powered_at is None:
+            self.powered_at = time.monotonic()
+            threading.Thread(target=self.boot, daemon=True).start()
+        elif not powered:
+            self.powered_at = None
+
+    def boot(self):                            # own thread: may sleep
+        time.sleep(1.0)
+        self.console.write("ready\nsensor> ")
+
+    def current(self, terminal, volts):        # amps drawn on an input
+        if self.powered_at is None:
+            return 0.0
+        return 0.4 if time.monotonic() - self.powered_at < 0.2 else 0.08
+
+    def voltage(self, terminal):               # volts driven on an output
+        return 3.3 if self.input_voltage("vin") >= 4.5 else 0.0
+
+    def console_line(self, line):              # a line typed on the console
+        if line == "id?":
+            self.console.write(self.serial + "\nsensor> ")
+```
+
+```yaml
+devices:
+  board:
+    class: "sensor_board:SensorBoard"   # module next to the bench file, or installed
+    args: {serial: "SB-24-0042"}
+    console: 5028                       # optional: console on this TCP port
+wiring:
+  - psu.ch1 -> board.vin
+  - mux.101 -> board.3V3
+  - mux.common -> dmm.input
+```
+
+| Member | Called by | What it does |
+|---|---|---|
+| `terminals` | — | `{"name": "input" \| "output"}`; wired as `<device>.<name>` |
+| `current(terminal, volts)` | the supply | amps drawn on an input at that voltage |
+| `voltage(terminal)` | the bench | volts driven on an output; `None` = not driving |
+| `update()` | after every instrument message | look at `input_voltage()`, start timelines |
+| `input_voltage(terminal)` | your code | voltage of the net an input is on |
+| `console.write(text)` | your code | send text to everyone connected to the console |
+| `console_line(line)` | the console port | a line someone typed |
+
+Rules that keep a bench responsive:
+
+- `current()`, `voltage()` and `update()` run in the instruments' threads —
+  never block in them. Start a thread for anything that takes time (boot
+  sequence) and compute time-dependent values from `time.monotonic()`.
+- `current()` must not call `input_voltage()`: the input voltage is what the
+  supply computes from `current()`.
+- A device output and a supply (or two outputs) on one net is an error, like
+  two supplies; a relay that would connect them is refused with `-221`.
+- An exception in `current()`/`voltage()` becomes `-300` in the error queue of
+  the instrument that asked; one in `update()` or `console_line()` is printed
+  once and ignored.
+
+Reach the console with any raw TCP client (`nc localhost 5028`) or with
+pyserial, as `serial.serial_for_url(bench.console_url("board"))`. The complete
+example is in
+[`examples/devices`](https://github.com/steitec/scpi-sim/tree/main/examples/devices):
+`pytest examples/devices --scpi-bench examples/devices/bench.yaml`.
 
 ## Fault injection
 
@@ -308,7 +396,7 @@ def test_dead_multimeter_raises_timeout(scpi_bench):
   is relative to the rootdir, like the ini key.
 
 [`examples/test_example.py`](https://github.com/steitec/scpi-sim/blob/main/examples/test_example.py) is a complete example:
-`pytest examples --scpi-bench examples/bench.yaml`.
+`pytest examples/test_example.py --scpi-bench examples/bench.yaml`.
 
 ## SCPI behaviour
 

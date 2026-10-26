@@ -22,7 +22,8 @@ jobs:
           python-version: "3.13"
       - run: pip install -e ".[dev]"
       - run: pytest -v
-      - run: pytest -v examples --scpi-bench examples/bench.yaml
+      - run: pytest -v examples/test_example.py --scpi-bench examples/bench.yaml
+      - run: pytest -v examples/devices --scpi-bench examples/devices/bench.yaml
 
   build:
     needs: [test]
