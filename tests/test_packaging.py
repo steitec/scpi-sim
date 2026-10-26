@@ -27,9 +27,36 @@ def test_project_urls_and_version():
 
 
 def test_release_runs_tests_and_checks_tag_before_publishing():
-    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"))
+    path = ROOT / ".github/workflows/release.yml"
+    if not path.exists():
+        pytest.skip("not in the source distribution, only in the repository")
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
     assert "test" in jobs
     assert "test" in jobs["build"]["needs"] and jobs["publish"]["needs"] == "build"
     steps = " ".join(str(step.get("run", "")) for step in jobs["build"]["steps"])
     assert "GITHUB_REF_NAME" in steps and "__version__" in steps
+
+
+def test_classifiers():
+    tomllib = pytest.importorskip("tomllib")
+    classifiers = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["classifiers"]
+    for version in ("3.10", "3.11", "3.12", "3.13"):
+        assert f"Programming Language :: Python :: {version}" in classifiers
+    assert any(c.startswith("Development Status ::") for c in classifiers)
+    assert "Framework :: Pytest" in classifiers
+
+
+def test_sdist_can_run_its_own_tests(tmp_path):
+    import subprocess
+    import sys
+    import tarfile
+    pytest.importorskip("build")
+    subprocess.run([sys.executable, "-m", "build", "--sdist", "--outdir", str(tmp_path), str(ROOT)],
+                   check=True, capture_output=True, timeout=300)
+    (sdist,) = tmp_path.glob("*.tar.gz")
+    with tarfile.open(sdist) as tar:
+        names = {name.split("/", 1)[1] for name in tar.getnames() if "/" in name}
+    for needed in ("tests/helpers.py", "tests/conftest.py", "CHANGELOG.md", "LICENSE",
+                   "examples/bench.yaml", "examples/test_example.py"):
+        assert needed in names, needed

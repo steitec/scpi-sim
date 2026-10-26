@@ -274,7 +274,9 @@ the instrument, not to a connection. From Python:
 
 The control port speaks one JSON object per line:
 `{"instrument": "dmm", "inject": "noise", "params": {"sigma": 0.05}}`,
-`{"instrument": "dmm", "clear": true}`, `{"list": true}`.
+`{"instrument": "dmm", "clear": true}`, `{"list": true}`. It has no
+authentication: with `--host 0.0.0.0` anyone who can reach the port can
+inject faults, so expose a bench only on a network you trust.
 
 ## pytest plugin
 
@@ -302,7 +304,8 @@ def test_dead_multimeter_raises_timeout(scpi_bench):
   generic `psu`, `dmm` and `mux`, not wired.
 - `scpi_bench.resource(name)` gives the VISA resource string,
   `scpi_bench.port(name)` the port, `scpi_bench.<name>` the instrument object.
-- `scpi_bench_factory(path_or_dict)` starts further benches.
+- `scpi_bench_factory(path_or_dict)` starts further benches; a relative path
+  is relative to the rootdir, like the ini key.
 
 [`examples/test_example.py`](https://github.com/steitec/scpi-sim/blob/main/examples/test_example.py) is a complete example:
 `pytest examples --scpi-bench examples/bench.yaml`.

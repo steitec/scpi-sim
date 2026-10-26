@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format follows
 - Bench files are checked strictly: duplicate keys, wrong option types and
   unknown terminals are reported with the offending key or line.
 - Python loads are imported from the bench file's folder as well.
+- The control port is refused if it clashes with an instrument port, closes
+  its connections when the bench stops and works on IPv6 (`--host ::1`).
+- The source distribution contains the tests, examples and changelog and can
+  run its own test suite.
 - **Fault injection**: `no_response`, `delay`, `disconnect`, `error`, `idn`,
   `offset`, `noise` — from Python (`instrument.inject(...)`), from pytest, or
   into a running bench with `scpi-sim fault` through a JSON control port.
