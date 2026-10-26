@@ -89,3 +89,21 @@ def test_ci_builds_and_smoke_tests_docker_image():
     steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["docker"]["steps"]
     runs = " ".join(str(step.get("run", "")) for step in steps)
     assert "docker build" in runs and "*IDN?" in runs
+
+
+def test_docker_image_waits_for_pypi_and_tags_latest_only_for_releases():
+    path = ROOT / ".github/workflows/release.yml"
+    if not path.exists():
+        pytest.skip("not in the source distribution, only in the repository")
+    job = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["docker"]
+    assert "publish" in job["needs"]
+    steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["docker"]["steps"]
+    text = " ".join(str(step) for step in steps)
+    assert "prerelease" in text or "latest=" in text
+
+
+def test_dockerfile_links_the_repository():
+    path = ROOT / "Dockerfile"
+    if not path.exists():
+        pytest.skip("not in the source distribution")
+    assert "org.opencontainers.image.source=https://github.com/steitec/scpi-sim" in path.read_text(encoding="utf-8")

@@ -258,25 +258,29 @@ class SensorBoard(Device):
     terminals = {"vin": "input", "3V3": "output"}
 
     def __init__(self, serial="SB-00-0001"):
-        super().__init__()
-        self.serial, self.powered_at = serial, None
+        super().__init__()                     # required: sets up console and bench hooks
+        self.serial, self.powered_at, self.generation = serial, None, 0
 
     def update(self):                          # after every instrument message
         powered = self.input_voltage("vin") >= 4.5
         if powered and self.powered_at is None:
             self.powered_at = time.monotonic()
-            threading.Thread(target=self.boot, daemon=True).start()
-        elif not powered:
+            self.generation += 1
+            threading.Thread(target=self.boot, args=(self.generation,), daemon=True).start()
+        elif not powered and self.powered_at is not None:
             self.powered_at = None
+            self.generation += 1               # a boot still running is now stale
 
-    def boot(self):                            # own thread: may sleep
+    def boot(self, generation):                # own thread: may sleep
         time.sleep(1.0)
-        self.console.write("ready\nsensor> ")
+        if generation == self.generation:      # not switched off meanwhile
+            self.console.write("ready\nsensor> ")
 
     def current(self, terminal, volts):        # amps drawn on an input
-        if self.powered_at is None:
+        powered_at = self.powered_at           # read once, update() runs in another thread
+        if powered_at is None:
             return 0.0
-        return 0.4 if time.monotonic() - self.powered_at < 0.2 else 0.08
+        return 0.4 if time.monotonic() - powered_at < 0.2 else 0.08
 
     def voltage(self, terminal):               # volts driven on an output
         return 3.3 if self.input_voltage("vin") >= 4.5 else 0.0
@@ -302,7 +306,7 @@ wiring:
 |---|---|---|
 | `terminals` | — | `{"name": "input" \| "output"}`; wired as `<device>.<name>` |
 | `current(terminal, volts)` | the supply | amps drawn on an input at that voltage |
-| `voltage(terminal)` | the bench | volts driven on an output; `None` = not driving |
+| `voltage(terminal)` | the bench | volts driven on an output; `None` reads as 0 V (the output still counts as a driver of its net) |
 | `update()` | after every instrument message | look at `input_voltage()`, start timelines |
 | `input_voltage(terminal)` | your code | voltage of the net an input is on |
 | `console.write(text)` | your code | send text to everyone connected to the console |
@@ -313,6 +317,12 @@ Rules that keep a bench responsive:
 - `current()`, `voltage()` and `update()` run in the instruments' threads —
   never block in them. Start a thread for anything that takes time (boot
   sequence) and compute time-dependent values from `time.monotonic()`.
+  `console_line()` runs on the console's event loop: don't block there either.
+- The bench runs one `update()` at a time, but `current()` and `voltage()` can
+  run while `update()` or your own threads change the device's state: read
+  shared attributes once into a local, and use a lock for state that changes
+  in several steps.
+- Call `super().__init__()` in your `__init__` and write `str` to the console.
 - `current()` must not call `input_voltage()`: the input voltage is what the
   supply computes from `current()`.
 - A device output and a supply (or two outputs) on one net is an error, like
@@ -436,7 +446,7 @@ The image runs the example bench (supply on 5025, multimeter on 5026,
 multiplexer on 5027, control port on 5099):
 
 ```bash
-docker run --rm -p 5025-5027:5025-5027 -p 5099:5099 ghcr.io/steitec/scpi-sim
+docker run --rm -p 5025-5027:5025-5027 -p 127.0.0.1:5099:5099 ghcr.io/steitec/scpi-sim
 ```
 
 Your own bench file (devices in Python modules next to it are found too):
@@ -445,6 +455,7 @@ Your own bench file (devices in Python modules next to it are found too):
 docker run --rm -p 5025-5028:5025-5028 -v "$PWD/bench":/bench ghcr.io/steitec/scpi-sim
 ```
 
+The control port has no authentication, hence `127.0.0.1:` in front of it.
 Any other command works as well, e.g.
 `docker run --rm -p 5025:5025 ghcr.io/steitec/scpi-sim serve dmm --host 0.0.0.0`.
 In CI, start it as a service container and point your tests at

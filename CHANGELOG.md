@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format follows
 
 - `InstrumentServer` is now built on a small `TcpServer` base class shared
   with the console server.
+- `Instrument.listeners`: callables run after every message, outside the
+  instrument lock (the bench uses it to update devices). A `no_response`
+  fault now also runs them.
+- `Bench.stop()` stops every server even if one of them fails.
 
 ## 0.2.0 - 2026-10-26
 

@@ -27,7 +27,9 @@ def station(scpi_bench):
     psu, dmm, mux = (rm.open_resource(scpi_bench.resource(n), read_termination="\n",
                                       write_termination="\n", timeout=2000) for n in names)
     console = serial.serial_for_url(scpi_bench.console_url("board"), timeout=0.1)
-    time.sleep(0.05)  # console connected before the board is powered
+    end = time.monotonic() + 5  # connected before the board is powered, or the boot log is gone
+    while scpi_bench.board.console.clients < 1 and time.monotonic() < end:
+        time.sleep(0.005)
     yield psu, dmm, mux, console
     console.close()
     for instrument in (psu, dmm, mux):

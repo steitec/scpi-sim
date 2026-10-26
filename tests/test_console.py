@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from helpers import read_until
+from helpers import read_until, wait_for_clients
 from scpi_sim.bench import Bench
 
 
@@ -25,7 +25,7 @@ def open_console(bench):
 def test_console_output_and_input():
     with console_bench() as b:
         with open_console(b) as c:
-            time.sleep(0.05)  # let the server attach the client
+            wait_for_clients(b.board)
             b.psu.process("VOLT 5;CURR 1;:OUTP ON")
             assert b"boot\n" in read_until(c, b"boot\n")
             c.sendall(b"hi\r\n")
@@ -36,7 +36,7 @@ def test_late_client_sees_only_new_output():
     with console_bench() as b:
         b.psu.process("VOLT 5;CURR 1;:OUTP ON")  # "boot" goes nowhere
         with open_console(b) as c:
-            time.sleep(0.05)
+            wait_for_clients(b.board)
             c.sendall(b"x\n")
             data = read_until(c, b"> x\n")
             assert b"boot" not in data
@@ -45,7 +45,7 @@ def test_late_client_sees_only_new_output():
 def test_two_clients_both_receive_and_both_can_type():
     with console_bench() as b:
         with open_console(b) as one, open_console(b) as two:
-            time.sleep(0.05)
+            wait_for_clients(b.board, 2)
             one.sendall(b"from one\n")
             two.sendall(b"from two\n")
             for c in (one, two):
@@ -58,10 +58,12 @@ def test_dropped_client_does_not_break_the_other():
     with console_bench() as b:
         with open_console(b) as stays:
             gone = open_console(b)
-            time.sleep(0.05)
+            wait_for_clients(b.board, 2)
             gone.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
             gone.close()
-            time.sleep(0.05)
+            end = time.monotonic() + 5
+            while b.board.console.clients > 1 and time.monotonic() < end:
+                time.sleep(0.005)
             b.board.console.write("still here\n")
             assert b"still here\n" in read_until(stays, b"still here\n")
             stays.sendall(b"ok\n")
@@ -86,7 +88,7 @@ def test_device_without_console_has_no_port():
 def test_console_line_exception_does_not_kill_server(capsys):
     with console_bench(cls="helpers:GrumpyBoard") as b:
         with open_console(b) as c:
-            time.sleep(0.05)
+            wait_for_clients(b.board)
             c.sendall(b"crash\n")
             c.sendall(b"after\n")
             assert b"> after\n" in read_until(c, b"> after\n")
@@ -97,7 +99,7 @@ def test_console_stops_with_the_bench():
     b = console_bench()
     b.start()
     c = open_console(b)
-    time.sleep(0.05)
+    wait_for_clients(b.board)
     b.stop()
     c.settimeout(2)
     assert c.recv(10) == b""

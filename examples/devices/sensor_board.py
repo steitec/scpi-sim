@@ -50,11 +50,12 @@ class SensorBoard(Device):
     # -- electrical behaviour (fast, no input_voltage() in current()) ---------------
 
     def current(self, terminal, volts):
+        powered_at = self.powered_at         # read once: update() may change it meanwhile
         if volts < 1.0:
             return 0.0
-        if self.powered_at is None:
+        if powered_at is None:
             return 0.002                     # leakage below the start threshold
-        if time.monotonic() - self.powered_at < 0.2:
+        if time.monotonic() - powered_at < 0.2:
             return 0.4                       # inrush
         return 0.08
 
