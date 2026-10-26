@@ -24,8 +24,8 @@ class Resistor:
     ohms: float
 
     def __post_init__(self) -> None:
-        if self.ohms < 0:
-            raise ValueError(f"resistance must not be negative: {self.ohms}")
+        if not self.ohms >= 0:  # also rejects nan
+            raise ValueError(f"resistance must be a number >= 0: {self.ohms}")
 
     def current(self, volts: float) -> float:
         if self.ohms == 0:  # short circuit

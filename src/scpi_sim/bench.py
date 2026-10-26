@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib
 import math
 import re
+import sys
 import threading
 from collections.abc import Iterable
 from pathlib import Path
@@ -24,11 +25,33 @@ from .instruments import Multimeter, Multiplexer, PowerSupply
 from .loads import Load, Parallel, Resistor
 from .transport import InstrumentServer
 
+def _whole(low: int, high: int | None = None):
+    def convert(value):
+        if isinstance(value, bool) or not isinstance(value, int) or value < low or (high is not None and value > high):
+            raise ValueError(f"must be a whole number {low}-{high}" if high else f"must be a whole number >= {low}")
+        return value
+    return convert
+
+
+def _real(low: float | None = None, above: float | None = None):
+    def convert(value):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) \
+                or (low is not None and value < low) or (above is not None and value <= above):
+            bound = f" >= {low}" if low is not None else f" > {above}" if above is not None else ""
+            raise ValueError(f"must be a number{bound}")
+        return float(value)
+    return convert
+
+
+# type -> (class, {option: converter})
 _TYPES = {
-    "psu": (PowerSupply, {"channels", "max_volts", "max_amps"}),
-    "dmm": (Multimeter, {"volts", "amps", "ohms", "noise", "seed"}),
-    "mux": (Multiplexer, {"channels"}),
+    "psu": (PowerSupply, {"channels": _whole(1), "max_volts": _real(above=0), "max_amps": _real(above=0)}),
+    "dmm": (Multimeter, {"volts": _real(), "amps": _real(), "ohms": _real(low=0), "noise": _real(low=0),
+                         "seed": _whole(0)}),
+    "mux": (Multiplexer, {"channels": _whole(1, 99)}),
 }
+# names an instrument cannot have: they are attributes of Bench
+_RESERVED = {"instruments", "ports", "control_port", "host", "start", "stop", "port", "resource"}
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 _NODE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _WIRE = re.compile(r"\s*(\S+)\s*->\s*(\S+)\s*")
@@ -36,6 +59,23 @@ _WIRE = re.compile(r"\s*(\S+)\s*->\s*(\S+)\s*")
 
 class BenchError(ValueError):
     """A problem in the bench description."""
+
+
+class _Loader(yaml.SafeLoader):
+    """SafeLoader that refuses duplicate keys instead of keeping the last one."""
+
+
+def _unique_mapping(loader: _Loader, node: yaml.MappingNode, deep: bool = False) -> dict:
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise BenchError(f"duplicate key {key!r} in line {key_node.start_mark.line + 1}")
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+
+_Loader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_mapping)
 
 
 class _Nets:
@@ -112,15 +152,20 @@ class Bench:
     def from_file(cls, path: str | Path) -> Bench:
         path = Path(path)
         try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            data = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader)
         except OSError as error:
             raise BenchError(f"{path}: {error.strerror or error}") from None
-        except yaml.YAMLError as error:
+        except (yaml.YAMLError, BenchError) as error:
             raise BenchError(f"{path}: {error}") from None
+        # python loads may live in modules next to the bench file
+        folder = str(path.resolve().parent)
+        sys.path.insert(0, folder)
         try:
             return cls.from_dict(data)
         except BenchError as error:
             raise BenchError(f"{path}: {error}") from None
+        finally:
+            sys.path.remove(folder)
 
     @classmethod
     def from_dict(cls, data: dict) -> Bench:
@@ -145,6 +190,8 @@ class Bench:
             where = f"instrument {name!r}"
             if not isinstance(name, str) or not _NAME.fullmatch(name):
                 raise BenchError(f"{where}: names use lowercase letters, digits and '_'")
+            if name in _RESERVED:
+                raise BenchError(f"{where}: reserved name, choose another one")
             if not isinstance(settings, dict):
                 raise BenchError(f"{where}: settings must be a mapping")
             settings = dict(settings)
@@ -158,10 +205,15 @@ class Bench:
                 raise BenchError(f"{where}: port {port} is already used by {used_ports[port]!r}")
             used_ports[port] = name
             factory, options = _TYPES[kind]
-            unknown = set(settings) - options
+            unknown = set(settings) - set(options)
             if unknown:
                 raise BenchError(f"{where}: unknown option {sorted(unknown)[0]!r} "
                                  f"(allowed for {kind}: {', '.join(sorted(options))})")
+            for option, value in settings.items():
+                try:
+                    settings[option] = options[option](value)
+                except ValueError as error:
+                    raise BenchError(f"{where}: option {option!r} {error}") from None
             try:
                 instrument = factory(**settings)
             except (TypeError, ValueError) as error:

@@ -131,3 +131,55 @@ def test_start_resources_and_ports():
 def test_unknown_instrument_attribute():
     with pytest.raises(AttributeError):
         Bench.from_dict(basic()).scope
+
+
+@pytest.mark.parametrize("text,needle", [
+    ("instruments:\n  psu: {type: psu, port: 0}\n  psu: {type: dmm, port: 0}\n", "'psu'"),
+    ("instruments:\n  psu: {type: psu, port: 0}\nloads:\n  a: {type: resistor, ohms: 1}\n"
+     "  a: {type: resistor, ohms: 2}\nwiring: [psu.ch1 -> a]\n", "'a'"),
+])
+def test_duplicate_keys_rejected(tmp_path, text, needle):
+    f = tmp_path / "bench.yaml"
+    f.write_text(text)
+    with pytest.raises(BenchError, match=f"duplicate key {needle}.*line"):
+        Bench.from_file(f)
+
+
+@pytest.mark.parametrize("instrument,option,value", [
+    ("psu", "max_volts", "abc"), ("psu", "max_amps", -1), ("psu", "channels", "two"),
+    ("psu", "channels", 2.5), ("dmm", "noise", "abc"), ("dmm", "seed", "abc"),
+    ("dmm", "volts", float("nan")), ("dmm", "ohms", -5), ("mux", "channels", True),
+])
+def test_option_types_checked(instrument, option, value):
+    d = basic()
+    d["instruments"][instrument][option] = value
+    with pytest.raises(BenchError, match=f"{instrument}.*{option}"):
+        Bench.from_dict(d)
+
+
+def test_resistor_ohms_must_be_finite():
+    d = basic()
+    d["loads"]["main"]["ohms"] = float("nan")
+    with pytest.raises(BenchError, match="main"):
+        Bench.from_dict(d)
+
+
+def test_python_load_next_to_bench_file(tmp_path):
+    import subprocess
+    import sys
+    (tmp_path / "lamp_load_beside.py").write_text(
+        "class Lamp:\n    def current(self, v):\n        return 0.3 if v > 0 else 0.0\n")
+    f = tmp_path / "bench.yaml"
+    f.write_text("instruments: {psu: {type: psu, port: 0}}\n"
+                 "loads: {main: {type: python, class: 'lamp_load_beside:Lamp'}}\n"
+                 "wiring: [psu.ch1 -> main]\n")
+    code = ("from scpi_sim.bench import Bench; b = Bench.from_file(r'%s'); "
+            "b.psu.process('VOLT 5;CURR 1;:OUTP ON'); print(b.psu.process('MEAS:CURR?'))" % f)
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30,
+                       cwd=str(tmp_path.parent))
+    assert r.stdout.strip() == "+3.00000000E-01", r.stderr
+
+
+def test_reserved_instrument_name():
+    with pytest.raises(BenchError, match="reserved"):
+        Bench.from_dict({"instruments": {"start": {"type": "dmm", "port": 0}}})
