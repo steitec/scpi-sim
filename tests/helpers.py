@@ -84,3 +84,41 @@ class BuggyBoard(Board):
 class BadUpdateBoard(Board):
     def update(self):
         raise RuntimeError("bug in update()")
+
+
+class EchoBoard(Board):
+    """Board with a console: prints "boot" on power-on and echoes typed lines."""
+
+    def update(self):
+        was_on = self.powered_at is not None
+        super().update()
+        if self.powered_at is not None and not was_on:
+            self.console.write("boot\n")
+
+    def console_line(self, line):
+        self.console.write(f"> {line}\n")
+
+
+class GrumpyBoard(EchoBoard):
+    def console_line(self, line):
+        if line == "crash":
+            raise RuntimeError("bug in console_line()")
+        super().console_line(line)
+
+
+def read_until(sock, expected, timeout=2.0):
+    """Read from a raw socket until ``expected`` (bytes) has arrived; return everything read."""
+    import time as t
+    sock.settimeout(0.1)
+    data = b""
+    end = t.monotonic() + timeout
+    while expected not in data:
+        assert t.monotonic() < end, f"timeout waiting for {expected!r}, got {data!r}"
+        try:
+            chunk = sock.recv(4096)
+        except OSError:
+            continue
+        if not chunk:
+            break
+        data += chunk
+    return data

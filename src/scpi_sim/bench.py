@@ -18,6 +18,7 @@ from pathlib import Path
 
 import yaml
 
+from .console import ConsoleServer
 from .control import ControlServer
 from .device import Device
 from .errors import ScpiError
@@ -161,6 +162,7 @@ class Bench:
         self._update_failed: set[str] = set()
         self._servers: dict[str, InstrumentServer] = {}
         self._control: ControlServer | None = None
+        self._consoles: dict[str, ConsoleServer] = {}
         self._switch_lock = threading.Lock()  # relay check + switch, across all multiplexers
 
     # --- construction -------------------------------------------------------------
@@ -462,6 +464,10 @@ class Bench:
                 server = InstrumentServer(instrument, host=host, port=0 if free_ports else self.ports[name])
                 server.start()
                 self._servers[name] = server
+            for name, port in self._console_ports.items():
+                console = ConsoleServer(self.devices[name], host=host, port=0 if free_ports else port, name=name)
+                console.start()
+                self._consoles[name] = console
             if self.control_port is not None:
                 self._control = ControlServer(self, host=host, port=0 if free_ports else self.control_port)
                 self.control_port = self._control.start()
@@ -474,6 +480,9 @@ class Bench:
         if self._control is not None:
             self._control.stop()
             self._control = None
+        for console in self._consoles.values():
+            console.stop()
+        self._consoles.clear()
         for server in self._servers.values():
             server.stop()
         self._servers.clear()
@@ -483,6 +492,14 @@ class Bench:
 
     def resource(self, name: str) -> str:
         return f"TCPIP0::{self.host}::{self.port(name)}::SOCKET"
+
+    def console_port(self, name: str) -> int:
+        """Bound console port of device ``name``; KeyError if it has no console."""
+        return self._consoles[name].port
+
+    def console_url(self, name: str) -> str:
+        """pyserial URL of a device console: ``socket://host:port``."""
+        return f"socket://{self.host}:{self.console_port(name)}"
 
     def __enter__(self) -> Bench:
         self.start()

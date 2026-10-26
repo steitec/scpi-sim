@@ -143,6 +143,11 @@ def _serve_bench(args: argparse.Namespace) -> int:
     stop = _stop_event()
     for name, instrument in bench.instruments.items():
         print(f"scpi-sim: {name} ({instrument.model}) listening on {host}:{bench.port(name)}")
+    for name in bench.devices:
+        try:
+            print(f"scpi-sim: {name} console on {host}:{bench.console_port(name)}")
+        except KeyError:  # device without console
+            pass
     if bench.control_port is not None:
         print(f"scpi-sim: control on {host}:{bench.control_port}")
     print("scpi-sim: bench running (Ctrl+C to stop)", flush=True)
