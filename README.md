@@ -4,10 +4,12 @@ Simulated SCPI lab instruments — a multimeter, a power supply and a relay
 multiplexer — that listen on a raw TCP socket like real LAN instruments on
 port 5025. Develop and test instrument automation without the hardware.
 
+![Demo: a simulated power supply driven from the command line](docs/demo.gif)
+
 ```console
 $ scpi-sim serve psu --load 24 &
 scpi-sim: PSU listening on 127.0.0.1:5025 (Ctrl+C to stop)
-$ printf '*IDN?\nVOLT 12;CURR 1;:OUTP ON;:MEAS:CURR?\nVOLT 40\nSYST:ERR?\n' | nc -q1 localhost 5025
+$ scpi-sim query "*IDN?" "VOLT 12;CURR 1;:OUTP ON;:MEAS:CURR?" "VOLT 40" "SYST:ERR?"
 scpi-sim,PSU,SIM00002,0.1.0
 +5.00000000E-01
 -222,"Data out of range"
@@ -55,12 +57,26 @@ pip install -e .            # PyPI release follows with v0.2
 scpi-sim serve dmm          # multimeter on 127.0.0.1:5025
 ```
 
-From another terminal:
+From another terminal, with the built-in client (works on Linux, macOS and
+Windows):
 
 ```console
-$ echo '*IDN?' | nc -q1 localhost 5025
+$ scpi-sim query "*IDN?"
 scpi-sim,DMM,SIM00001,0.1.0
 ```
+
+`scpi-sim query [--host HOST] [--port PORT] MESSAGE...` sends each message
+and prints the answer to every message that contains a `?`.
+
+Any raw TCP client works as well, e.g. `nc`:
+
+```bash
+echo '*IDN?' | nc -q1 localhost 5025    # Linux (netcat-openbsd)
+echo '*IDN?' | nc -N localhost 5025     # macOS
+```
+
+Every message must end with a newline (`\n`), as on real LAN instruments:
+`printf '*IDN?' | nc …` without one gets no answer.
 
 With PyVISA and the pure-Python backend (`pip install pyvisa pyvisa-py`):
 
@@ -73,7 +89,8 @@ dmm = rm.open_resource("TCPIP0::127.0.0.1::5025::SOCKET",
 print(dmm.query("MEAS:VOLT:DC?"))
 ```
 
-Run several instruments side by side on different ports:
+Run several instruments side by side on different ports (`scpi-sim query
+--port 5026 …` talks to the second one):
 
 ```bash
 scpi-sim serve psu --port 5025 --channels 2 --load 24
@@ -82,7 +99,9 @@ scpi-sim serve mux --port 5027
 ```
 
 The server listens on `127.0.0.1` by default; use `--host 0.0.0.0` to make it
-reachable from other machines.
+reachable from other machines. A host name that resolves to several addresses
+(`localhost` → `127.0.0.1` and `::1`) is served on all of them, on the same
+port.
 
 ## Instruments
 
@@ -104,8 +123,9 @@ All instruments support the IEEE 488.2 common commands `*IDN?`, `*RST`,
 
 Ranges: 0.1/1/10/100/1000 V, 0.01/0.1/1/3/10 A, 100 Ω … 100 MΩ in decades.
 `range` is `AUTO`, `DEF`, `MIN`, `MAX` or a value (the smallest range that
-holds it is selected). A reading above 120 % of the range returns
-`+9.90000000E+37`.
+holds its magnitude is selected); an optional second parameter (resolution)
+is accepted. A reading above 120 % of the range returns `+9.90000000E+37`
+(`-9.90000000E+37` for negative readings).
 
 Options: `--volts 5.0`, `--amps 0.1`, `--ohms 1000` (the simulated input),
 `--noise 50e-6` (relative standard deviation, `0` for exact readings),
@@ -115,14 +135,16 @@ Options: `--volts 5.0`, `--amps 0.1`, `--ohms 1000` (the simulated input),
 
 | Command | |
 |---|---|
-| `[SOURce:]VOLTage[:LEVel][:IMMediate][:AMPLitude] <v>` / `…? [MIN\|MAX]` | voltage setpoint, 0–30 V |
-| `[SOURce:]CURRent[:LEVel][:IMMediate][:AMPLitude] <a>` / `…? [MIN\|MAX]` | current limit, 0–3 A |
+| `[SOURce[n]:]VOLTage[:LEVel][:IMMediate][:AMPLitude] <v>` / `…? [MIN\|MAX\|DEF]` | voltage setpoint, 0–30 V |
+| `[SOURce[n]:]CURRent[:LEVel][:IMMediate][:AMPLitude] <a>` / `…? [MIN\|MAX\|DEF]` | current limit, 0–3 A |
 | `OUTPut[n][:STATe] ON\|OFF` / `OUTPut[n][:STATe]?` | output on/off, `n` = channel |
 | `OUTPut[n]:MODE?` | `OFF`, `CV` or `CC` |
 | `MEASure:VOLTage[:DC]?`, `MEASure:CURRent[:DC]?` | at the output terminals |
 | `INSTrument:NSELect <n>` / `?`, `INSTrument[:SELect] CH<n>` / `?` | select channel |
 
-`*RST` state: 0 V, 0.1 A, output off, channel 1 selected. Values accept units
+`SOURce<n>` and `OUTPut<n>` address channel `n` directly; without a number
+the channel selected with `INSTrument` is used. `*RST` state: 0 V, 0.1 A,
+output off, channel 1 selected. Values accept units
 (`500 mV`, `250 mA`).
 
 Options: `--channels 1`, `--load OHMS` (resistive load on every output;
