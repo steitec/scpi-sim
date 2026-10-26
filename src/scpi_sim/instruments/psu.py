@@ -63,7 +63,7 @@ class PowerSupply(Instrument):
             return channel.amps * self.load_ohms, channel.amps, "CC"
         return channel.volts, amps, "CV"
 
-    def _limit_query(self, call: Call, setting: float, maximum: float) -> float:
+    def _limit_query(self, call: Call, setting: float, maximum: float, default: float) -> float:
         arg = call.optional_arg(0)
         if arg is None:
             return setting
@@ -72,6 +72,8 @@ class PowerSupply(Instrument):
             return 0.0
         if arg in ("MAX", "MAXIMUM"):
             return maximum
+        if arg in ("DEF", "DEFAULT"):
+            return default
         raise ScpiError(-224)
 
     # --- channel selection ----------------------------------------------------
@@ -100,23 +102,25 @@ class PowerSupply(Instrument):
 
     # --- settings ---------------------------------------------------------------
 
-    @scpi("[SOURce:]VOLTage[:LEVel][:IMMediate][:AMPLitude]")
+    # SOURce<n> addresses channel n directly, without it the selected channel is used.
+
+    @scpi("[SOURce#:]VOLTage[:LEVel][:IMMediate][:AMPLitude]")
     def volt(self, call: Call) -> None:
-        self._channel().volts = parse_number(call.arg(0), "V", minimum=0.0,
-                                             maximum=self.max_volts, default=DEFAULT_VOLTS)
+        self._channel(call.suffixes[0]).volts = parse_number(
+            call.arg(0), "V", minimum=0.0, maximum=self.max_volts, default=DEFAULT_VOLTS) + 0.0  # no -0
 
-    @scpi("[SOURce:]VOLTage[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
+    @scpi("[SOURce#:]VOLTage[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def volt_query(self, call: Call) -> float:
-        return self._limit_query(call, self._channel().volts, self.max_volts)
+        return self._limit_query(call, self._channel(call.suffixes[0]).volts, self.max_volts, DEFAULT_VOLTS)
 
-    @scpi("[SOURce:]CURRent[:LEVel][:IMMediate][:AMPLitude]")
+    @scpi("[SOURce#:]CURRent[:LEVel][:IMMediate][:AMPLitude]")
     def curr(self, call: Call) -> None:
-        self._channel().amps = parse_number(call.arg(0), "A", minimum=0.0,
-                                            maximum=self.max_amps, default=DEFAULT_AMPS)
+        self._channel(call.suffixes[0]).amps = parse_number(
+            call.arg(0), "A", minimum=0.0, maximum=self.max_amps, default=DEFAULT_AMPS) + 0.0
 
-    @scpi("[SOURce:]CURRent[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
+    @scpi("[SOURce#:]CURRent[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def curr_query(self, call: Call) -> float:
-        return self._limit_query(call, self._channel().amps, self.max_amps)
+        return self._limit_query(call, self._channel(call.suffixes[0]).amps, self.max_amps, DEFAULT_AMPS)
 
     @scpi("OUTPut#[:STATe]")
     def outp(self, call: Call) -> None:

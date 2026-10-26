@@ -83,3 +83,11 @@ def test_negative_load_exit_2():
     r = subprocess.run([sys.executable, "-m", "scpi_sim.cli", "serve", "psu", "--load", "-5", "--port", "0"],
                        capture_output=True, text=True, timeout=10)
     assert r.returncode == 2 and "load" in r.stderr
+
+
+@pytest.mark.parametrize("port", ["70000", "-1"])
+def test_port_out_of_range_exit_2(port, capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["serve", "dmm", "--port", port])
+    assert e.value.code == 2
+    assert "0-65535" in capsys.readouterr().err

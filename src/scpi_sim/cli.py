@@ -13,6 +13,16 @@ from .instruments import Multimeter, Multiplexer, PowerSupply
 from .transport import InstrumentServer
 
 
+def _port(text: str) -> int:
+    try:
+        port = int(text)
+    except ValueError:
+        port = -1
+    if not 0 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"invalid port {text!r} (allowed: 0-65535)")
+    return port
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="scpi-sim", description="Simulated SCPI lab instruments on a raw TCP socket.")
     parser.add_argument("--version", action="version", version=f"scpi-sim {__version__}")
@@ -23,7 +33,7 @@ def _parser() -> argparse.ArgumentParser:
     def kind(name: str, help: str) -> argparse.ArgumentParser:
         p = kinds.add_parser(name, help=help)
         p.add_argument("--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)")
-        p.add_argument("--port", type=int, default=5025, help="TCP port (default: 5025, 0 = any free port)")
+        p.add_argument("--port", type=_port, default=5025, help="TCP port (default: 5025, 0 = any free port)")
         return p
 
     dmm = kind("dmm", "digital multimeter")

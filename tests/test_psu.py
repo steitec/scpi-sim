@@ -82,3 +82,23 @@ def test_negative_load_rejected():
     import pytest
     with pytest.raises(ValueError):
         PowerSupply(load_ohms=-5)
+
+
+def test_negative_zero_reads_back_positive():
+    p = PowerSupply()
+    p.process("VOLT -0")
+    assert p.process("VOLT?") == "+0.00000000E+00"
+
+
+def test_query_default():
+    p = PowerSupply()
+    assert p.process("VOLT? DEF;:CURR? DEF") == "+0.00000000E+00;+1.00000000E-01"
+
+
+def test_source_suffix_selects_channel():
+    p = PowerSupply(channels=2)
+    p.process("SOUR2:VOLT 7;:SOURCE2:CURR 0.5")
+    assert p.process("SOUR2:VOLT?;:SOUR2:CURR?;:SOUR1:VOLT?") == "+7.00000000E+00;+5.00000000E-01;+0.00000000E+00"
+    assert p.process("INST:NSEL?") == "1"
+    p.process("SOUR3:VOLT 1")
+    assert p.process("SYST:ERR?").startswith("-114")

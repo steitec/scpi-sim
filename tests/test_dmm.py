@@ -73,3 +73,13 @@ def test_measure_accepts_resolution_argument():
     d = Multimeter(volts=3.3, noise=0)
     assert d.process("MEAS:VOLT? 10,0.001") == "+3.30000000E+00"
     assert d.process("SYST:ERR?") == '0,"No error"'
+
+
+def test_negative_range_uses_magnitude():
+    d = Multimeter(volts=-3.0, noise=0)
+    assert d.process("MEAS:VOLT? -10") == "-3.00000000E+00"
+    assert d.process("SYST:ERR?") == '0,"No error"'
+
+
+def test_negative_overload_is_negative():
+    assert Multimeter(volts=-5.0, noise=0).process("MEAS:VOLT? 1") == "-9.90000000E+37"

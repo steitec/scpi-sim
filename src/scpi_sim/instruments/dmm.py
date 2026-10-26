@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 
 from ..instrument import Call, Instrument, scpi
@@ -38,18 +39,23 @@ class Multimeter(Instrument):
 
     def _configure(self, function: str, arg: str | None) -> None:
         unit, ranges = _FUNCTIONS[function]
-        if arg is None or arg.strip().upper() in ("AUTO", "DEF", "DEFAULT"):
+        keyword = arg.strip().upper() if arg is not None else "AUTO"
+        if keyword in ("AUTO", "DEF", "DEFAULT"):
             selected = None
+        elif keyword in ("MIN", "MINIMUM"):
+            selected = ranges[0]
+        elif keyword in ("MAX", "MAXIMUM"):
+            selected = ranges[-1]
         else:
-            value = parse_number(arg, unit, minimum=0.0, maximum=ranges[-1], default=0.0)
-            selected = next(r for r in ranges if r >= value)
+            value = parse_number(arg, unit, minimum=-ranges[-1], maximum=ranges[-1], default=0.0)
+            selected = next(r for r in ranges if r >= abs(value))
         self._function, self._range = function, selected
 
     def _read(self) -> float:
         value = float({"VOLT": self.volts, "CURR": self.amps, "RES": self.ohms}[self._function])
         reading = value * (1 + self._random.gauss(0, self.noise)) if self.noise else value
         limit = self._range if self._range is not None else _FUNCTIONS[self._function][1][-1]
-        return OVERLOAD if abs(reading) > 1.2 * limit else reading
+        return math.copysign(OVERLOAD, reading) if abs(reading) > 1.2 * limit else reading
 
     @scpi("MEASure:VOLTage[:DC]?", max_args=2)  # [range[,resolution]]
     def meas_volt(self, call: Call) -> float:
