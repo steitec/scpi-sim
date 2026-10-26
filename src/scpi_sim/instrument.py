@@ -1,0 +1,215 @@
+"""Base class for simulated instruments.
+
+Subclasses register commands with the ``@scpi`` decorator; this class does the
+dispatching and implements what every IEEE 488.2 / SCPI instrument has: the
+common commands, the error queue and the status registers.
+"""
+
+from __future__ import annotations
+
+import threading
+from dataclasses import dataclass
+from typing import Callable, ClassVar
+
+from . import __version__
+from .errors import ScpiError
+from .scpi.params import format_number, parse_number
+from .scpi.parser import parse_message
+from .scpi.pattern import HeaderPattern
+
+# Standard Event Status Register bits
+OPC, QYE, DDE, EXE, CME, PON = 1, 4, 8, 16, 32, 128
+
+
+@dataclass(frozen=True)
+class Call:
+    args: tuple[str, ...]
+    suffixes: tuple[int | None, ...]
+
+    def arg(self, i: int) -> str:
+        if i >= len(self.args):
+            raise ScpiError(-109)
+        return self.args[i]
+
+    def optional_arg(self, i: int, default: str | None = None) -> str | None:
+        return self.args[i] if i < len(self.args) else default
+
+
+def scpi(pattern: str) -> Callable:
+    """Register a method as the handler for a SCPI header pattern."""
+    def decorate(method: Callable) -> Callable:
+        method._scpi_pattern = HeaderPattern(pattern)
+        return method
+    return decorate
+
+
+def _format(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return format_number(value)
+    if isinstance(value, (list, tuple)):
+        return ",".join(_format(v) for v in value)
+    return str(value)
+
+
+def _event_bit(code: int) -> int:
+    if -199 <= code <= -100:
+        return CME
+    if -299 <= code <= -200:
+        return EXE
+    if -399 <= code <= -300:
+        return DDE
+    if -499 <= code <= -400:
+        return QYE
+    return 0
+
+
+class Instrument:
+    model: ClassVar[str] = "GENERIC"
+    serial: ClassVar[str] = "SIM00000"
+    ERROR_QUEUE_SIZE = 20
+
+    _commands: ClassVar[list[tuple[HeaderPattern, str]]] = []
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        commands, seen = [], set()
+        for klass in cls.__mro__:
+            for name, attr in vars(klass).items():
+                if name in seen:
+                    continue
+                seen.add(name)
+                pattern = getattr(attr, "_scpi_pattern", None)
+                if pattern is not None:
+                    commands.append((pattern, name))
+        cls._commands = commands
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._errors: list[ScpiError] = []
+        self._esr = PON
+        self._ese = 0
+        self._sre = 0
+
+    @property
+    def idn(self) -> str:
+        return f"scpi-sim,{self.model},{self.serial},{__version__}"
+
+    def reset(self) -> None:
+        """Bring device settings to their *RST state (not the status system)."""
+
+    def push_error(self, error: ScpiError) -> None:
+        self._esr |= _event_bit(error.code)
+        if len(self._errors) < self.ERROR_QUEUE_SIZE:
+            self._errors.append(error)
+        elif self._errors[-1].code != -350:
+            self._errors[-1] = ScpiError(-350)
+
+    def process(self, line: str) -> str | None:
+        """Execute one program message; return the joined query responses."""
+        responses = []
+        with self._lock:
+            for command in parse_message(line):
+                if isinstance(command, ScpiError):
+                    self.push_error(command)
+                    continue
+                try:
+                    response = self._dispatch(command.header, command.is_query, command.args)
+                except ScpiError as error:
+                    self.push_error(error)
+                    continue
+                except Exception as error:  # a bug in a device model must not kill the server
+                    self.push_error(ScpiError(-300, f"{type(error).__name__}: {error}"))
+                    continue
+                if response is not None:
+                    responses.append(response)
+        return ";".join(responses) if responses else None
+
+    def _dispatch(self, header: tuple[str, ...], is_query: bool, args: tuple[str, ...]) -> str | None:
+        for pattern, name in self._commands:
+            suffixes = pattern.match(header, is_query)
+            if suffixes is not None:
+                return _format(getattr(self, name)(Call(args, suffixes)))
+        raise ScpiError(-113)
+
+    # --- IEEE 488.2 common commands -----------------------------------------
+
+    @scpi("*IDN?")
+    def _idn(self, call: Call) -> str:
+        return self.idn
+
+    @scpi("*RST")
+    def _rst(self, call: Call) -> None:
+        self.reset()
+
+    @scpi("*CLS")
+    def _cls(self, call: Call) -> None:
+        self._errors.clear()
+        self._esr = 0
+
+    @scpi("*ESR?")
+    def _esr_query(self, call: Call) -> int:
+        value, self._esr = self._esr, 0
+        return value
+
+    @scpi("*ESE")
+    def _ese_set(self, call: Call) -> None:
+        self._ese = round(parse_number(call.arg(0), minimum=0, maximum=255, default=0))
+
+    @scpi("*ESE?")
+    def _ese_query(self, call: Call) -> int:
+        return self._ese
+
+    @scpi("*SRE")
+    def _sre_set(self, call: Call) -> None:
+        self._sre = round(parse_number(call.arg(0), minimum=0, maximum=255, default=0))
+
+    @scpi("*SRE?")
+    def _sre_query(self, call: Call) -> int:
+        return self._sre
+
+    @scpi("*STB?")
+    def _stb(self, call: Call) -> int:
+        stb = 0
+        if self._errors:
+            stb |= 4
+        if self._esr & self._ese:
+            stb |= 32
+        if stb & self._sre & ~64:
+            stb |= 64
+        return stb
+
+    @scpi("*OPC")
+    def _opc(self, call: Call) -> None:
+        self._esr |= OPC  # every operation completes immediately
+
+    @scpi("*OPC?")
+    def _opc_query(self, call: Call) -> int:
+        return 1
+
+    @scpi("*WAI")
+    def _wai(self, call: Call) -> None:
+        pass
+
+    @scpi("*TST?")
+    def _tst(self, call: Call) -> int:
+        return 0
+
+    # --- SCPI SYSTem subsystem ----------------------------------------------
+
+    @scpi("SYSTem:ERRor[:NEXT]?")
+    def _syst_err(self, call: Call) -> str:
+        return str(self._errors.pop(0) if self._errors else ScpiError(0))
+
+    @scpi("SYSTem:ERRor:COUNt?")
+    def _syst_err_count(self, call: Call) -> int:
+        return len(self._errors)
+
+    @scpi("SYSTem:VERSion?")
+    def _syst_version(self, call: Call) -> str:
+        return "1999.0"
