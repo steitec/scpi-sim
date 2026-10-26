@@ -430,6 +430,27 @@ Error codes:
 | -300 | Device-specific error |
 | -350 | Queue overflow |
 
+## Docker
+
+The image runs the example bench (supply on 5025, multimeter on 5026,
+multiplexer on 5027, control port on 5099):
+
+```bash
+docker run --rm -p 5025-5027:5025-5027 -p 5099:5099 ghcr.io/steitec/scpi-sim
+```
+
+Your own bench file (devices in Python modules next to it are found too):
+
+```bash
+docker run --rm -p 5025-5028:5025-5028 -v "$PWD/bench":/bench ghcr.io/steitec/scpi-sim
+```
+
+Any other command works as well, e.g.
+`docker run --rm -p 5025:5025 ghcr.io/steitec/scpi-sim serve dmm --host 0.0.0.0`.
+In CI, start it as a service container and point your tests at
+`TCPIP0::localhost::5025::SOCKET`. The image is published with each release;
+until then build it yourself with `docker build -t scpi-sim .`.
+
 ## Python API
 
 Start instruments from your own tests, on a free port:
@@ -480,7 +501,6 @@ class Thermometer(Instrument):
 
 ## Roadmap
 
-- **v0.3** — Docker image for CI
 - **later** — profiles that behave similar to common bench instruments,
   VXI-11, a simple oscilloscope
 

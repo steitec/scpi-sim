@@ -60,3 +60,32 @@ def test_sdist_can_run_its_own_tests(tmp_path):
     for needed in ("tests/helpers.py", "tests/conftest.py", "CHANGELOG.md", "LICENSE",
                    "examples/bench.yaml", "examples/test_example.py"):
         assert needed in names, needed
+
+
+def test_dockerfile_entrypoint():
+    path = ROOT / "Dockerfile"
+    if not path.exists() and not (ROOT / ".git").exists():
+        pytest.skip("not in the source distribution")
+    text = path.read_text(encoding="utf-8")
+    assert 'ENTRYPOINT ["scpi-sim"]' in text
+    assert "USER " in text  # not root
+
+
+def test_release_publishes_docker_image_after_tests():
+    path = ROOT / ".github/workflows/release.yml"
+    if not path.exists():
+        pytest.skip("not in the source distribution, only in the repository")
+    job = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["docker"]
+    assert "test" in job["needs"]
+    assert job["permissions"]["packages"] == "write"
+    text = path.read_text(encoding="utf-8")
+    assert "ghcr.io/steitec/scpi-sim" in text and ":latest" in text
+
+
+def test_ci_builds_and_smoke_tests_docker_image():
+    path = ROOT / ".github/workflows/ci.yml"
+    if not path.exists():
+        pytest.skip("not in the source distribution, only in the repository")
+    steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["docker"]["steps"]
+    runs = " ".join(str(step.get("run", "")) for step in steps)
+    assert "docker build" in runs and "*IDN?" in runs

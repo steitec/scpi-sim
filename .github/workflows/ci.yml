@@ -21,3 +21,20 @@ jobs:
       - run: pytest -v
       - run: pytest -v examples/test_example.py --scpi-bench examples/bench.yaml
       - run: pytest -v examples/devices --scpi-bench examples/devices/bench.yaml
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t scpi-sim:ci .
+      - run: docker run -d --name sim -p 5025-5027:5025-5027 scpi-sim:ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install .
+      - name: The container answers *IDN?
+        run: |
+          for i in $(seq 1 30); do scpi-sim query --timeout 1 "*IDN?" && break; sleep 1; done
+          scpi-sim query "*IDN?" | grep '^scpi-sim,PSU'
+      - if: always()
+        run: docker logs sim; docker rm -f sim

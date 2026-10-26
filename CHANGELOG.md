@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.3.0 - 2026-10-26
+
+### Added
+
+- **Devices**: your own device under test as a Python class
+  (`scpi_sim.Device`) with input terminals that draw current and output
+  terminals that drive their net; `update()` after every instrument message
+  lets it react to power-on (inrush, boot timelines). Configured under
+  `devices:` in the bench file.
+- **Device console**: a raw TCP port per device (`console:` in the bench
+  file), broadcast to every client, typed lines go to `console_line()`;
+  pyserial reaches it as `socket://host:port` (`Bench.console_url()`).
+- Example device in `examples/devices` (sensor board with boot log and
+  console) and the README section "Writing your own device".
+- **Docker image**: `Dockerfile` (non-root, example bench by default); CI
+  builds and smoke-tests it, releases publish `ghcr.io/steitec/scpi-sim`.
+
+### Changed
+
+- `InstrumentServer` is now built on a small `TcpServer` base class shared
+  with the console server.
+
 ## 0.2.0 - 2026-10-26
 
 ### Added
