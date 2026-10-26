@@ -49,7 +49,7 @@ fit for unit tests of PyVISA code. scpi-sim takes a different approach:
 Requires Python 3.10 or newer. No runtime dependencies.
 
 ```bash
-git clone <this repository> && cd scpi-sim
+git clone https://github.com/steitec/scpi-sim.git && cd scpi-sim
 pip install -e .            # PyPI release follows with v0.2
 
 scpi-sim serve dmm          # multimeter on 127.0.0.1:5025
