@@ -26,6 +26,9 @@ dev = ["pytest>=8", "pyvisa>=1.13", "pyvisa-py>=0.7"]
 [project.scripts]
 scpi-sim = "scpi_sim.cli:main"
 
+[project.entry-points.pytest11]
+scpi_sim = "scpi_sim.pytest_plugin"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

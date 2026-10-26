@@ -12,3 +12,5 @@ import helpers  # noqa: E402
 def _close_test_sockets():
     yield
     helpers.close_all()
+
+pytest_plugins = ["pytester"]
