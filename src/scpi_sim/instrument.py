@@ -90,7 +90,7 @@ class Instrument:
         cls._commands = commands
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._errors: list[ScpiError] = []
         self._esr = PON
         self._ese = 0
@@ -104,11 +104,12 @@ class Instrument:
         """Bring device settings to their *RST state (not the status system)."""
 
     def push_error(self, error: ScpiError) -> None:
-        self._esr |= _event_bit(error.code)
-        if len(self._errors) < self.ERROR_QUEUE_SIZE:
-            self._errors.append(error)
-        elif self._errors[-1].code != -350:
-            self._errors[-1] = ScpiError(-350)
+        with self._lock:
+            self._esr |= _event_bit(error.code)
+            if len(self._errors) < self.ERROR_QUEUE_SIZE:
+                self._errors.append(error)
+            elif self._errors[-1].code != -350:
+                self._errors[-1] = ScpiError(-350)
 
     def process(self, line: str) -> str | None:
         """Execute one program message; return the joined query responses."""

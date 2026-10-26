@@ -1,0 +1,118 @@
+"""Raw TCP socket server that makes an instrument look like a LAN instrument.
+
+Like port 5025 on real instruments: newline-terminated SCPI messages in,
+newline-terminated responses out, no framing beyond that.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import threading
+
+from .errors import ScpiError
+from .instrument import Instrument
+
+MAX_LINE = 64 * 1024
+
+
+class InstrumentServer:
+    """Serve one instrument on one TCP port, from a background thread."""
+
+    def __init__(self, instrument: Instrument, host: str = "127.0.0.1", port: int = 5025):
+        self.instrument = instrument
+        self.host = host
+        self.port = port
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._server: asyncio.base_events.Server | None = None
+        self._clients: set[asyncio.Task] = set()
+
+    def start(self) -> int:
+        """Bind and start serving; return the bound port. Raises OSError if the port is taken."""
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._loop.run_forever, daemon=True,
+                                        name=f"scpi-sim-{self.instrument.model}")
+        self._thread.start()
+        try:
+            asyncio.run_coroutine_threadsafe(self._open(), self._loop).result()
+        except BaseException:
+            self._halt_loop()
+            raise
+        return self.port
+
+    def stop(self) -> None:
+        """Close the listening socket and all client connections."""
+        if self._loop is None:
+            return
+        asyncio.run_coroutine_threadsafe(self._close(), self._loop).result(timeout=5)
+        self._halt_loop()
+
+    def __enter__(self) -> InstrumentServer:
+        self.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.stop()
+
+    # --- internals (run inside the server thread) ---------------------------------
+
+    def _halt_loop(self) -> None:
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(timeout=5)
+        self._loop.close()
+        self._loop = self._thread = None
+
+    async def _open(self) -> None:
+        self._server = await asyncio.start_server(self._accept, self.host, self.port)
+        self.port = self._server.sockets[0].getsockname()[1]
+
+    async def _close(self) -> None:
+        self._server.close()
+        for task in list(self._clients):
+            task.cancel()
+        await asyncio.gather(*self._clients, return_exceptions=True)
+        await self._server.wait_closed()
+
+    async def _accept(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.current_task()
+        self._clients.add(task)
+        try:
+            await self._serve_client(reader, writer)
+        except (ConnectionError, asyncio.CancelledError):
+            pass
+        finally:
+            self._clients.discard(task)
+            writer.close()
+
+    async def _serve_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        buffer = bytearray()
+        discarding = False  # inside an oversized line, dropping bytes up to the next newline
+        while True:
+            chunk = await reader.read(4096)
+            if not chunk:
+                return
+            buffer += chunk
+            while True:
+                end = buffer.find(b"\n")
+                if end < 0:
+                    if len(buffer) > MAX_LINE:
+                        if not discarding:
+                            self.instrument.push_error(ScpiError(-223))
+                        discarding = True
+                        buffer.clear()
+                    break
+                raw = bytes(buffer[:end])
+                del buffer[:end + 1]
+                if discarding:
+                    discarding = False
+                    continue
+                if len(raw) > MAX_LINE:
+                    self.instrument.push_error(ScpiError(-223))
+                    continue
+                line = raw.decode("utf-8", errors="replace").rstrip("\r")
+                if not line.strip():
+                    continue
+                response = self.instrument.process(line)
+                if response is not None:
+                    writer.write(response.encode() + b"\n")
+                    await writer.drain()
