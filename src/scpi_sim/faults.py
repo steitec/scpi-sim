@@ -70,6 +70,8 @@ def _number(value: Any) -> float:
 
 
 def _text(value: Any) -> str:
+    if value is None:
+        raise ValueError("must be text")
     return str(value)
 
 

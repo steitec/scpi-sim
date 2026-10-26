@@ -210,3 +210,19 @@ def test_bench_stops_on_sigint_right_after_start(tmp_path):
     finally:
         p.kill()
         p.communicate()
+
+
+def test_fault_cli_keeps_text_values(tmp_path):
+    import yaml
+    from helpers import BASIC
+    from scpi_sim.bench import Bench
+    data = yaml.safe_load(BASIC)
+    data["control"] = 0
+    with Bench.from_dict(data) as b:
+        port = str(b.control_port)
+        assert main(["fault", "dmm", "idn", "value=007", "--control-port", port]) == 0
+        assert b.dmm.faults["idn"] == {"value": "007"}
+        assert main(["fault", "dmm", "offset", "value=0.5", "--control-port", port]) == 0
+        assert b.dmm.faults["offset"] == {"value": 0.5}
+        assert main(["fault", "psu", "no_response", "count=2", "--control-port", port]) == 0
+        assert b.psu.faults["no_response"] == {"count": 2}

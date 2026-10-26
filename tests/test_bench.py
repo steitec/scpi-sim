@@ -82,8 +82,8 @@ def test_config_errors_name_the_problem(mutate, needle):
 
 def test_yaml_syntax_error(tmp_path):
     f = tmp_path / "bench.yaml"
-    f.write_text("instruments: [\n")
-    with pytest.raises(BenchError, match="bench.yaml"):
+    f.write_text("instruments:\n  psu: {type: psu, port: 0\nwiring: []\n")
+    with pytest.raises(BenchError, match=r"bench\.yaml.*line \d+"):
         Bench.from_file(f)
 
 
@@ -183,3 +183,28 @@ def test_python_load_next_to_bench_file(tmp_path):
 def test_reserved_instrument_name():
     with pytest.raises(BenchError, match="reserved"):
         Bench.from_dict({"instruments": {"start": {"type": "dmm", "port": 0}}})
+
+
+def test_control_port_must_not_clash_with_instrument():
+    d = basic()
+    d["instruments"]["psu"]["port"] = 5025
+    d["control"] = 5025
+    with pytest.raises(BenchError, match="control.*5025"):
+        Bench.from_dict(d)
+
+
+def test_current_limit_resolves_nets_once(monkeypatch):
+    class Diode:
+        def current(self, v):
+            return max(0.0, v - 0.6)
+
+    d = basic()
+    b = Bench.from_dict(d)
+    b._loads["main"] = Diode()
+    b.mux.process("ROUT:CLOS (@101)")
+    b.psu.process("VOLT 5;CURR 0.4;:OUTP ON")
+    calls = []
+    original = b._nets
+    monkeypatch.setattr(b, "_nets", lambda *a: calls.append(1) or original(*a))
+    assert b.psu.process("OUTP:MODE?") == "CC"
+    assert len(calls) <= 2

@@ -142,3 +142,27 @@ def test_fault_hits_next_query_from_any_client():
 def test_non_finite_values_rejected(kind, params):
     with pytest.raises(ValueError):
         Multimeter().inject(kind, **params)
+
+
+def test_delay_on_one_bench_instrument_does_not_stall_the_others():
+    import yaml
+    from helpers import BASIC
+    from scpi_sim.bench import Bench
+    with Bench.from_dict(yaml.safe_load(BASIC)) as b:
+        _, dmm = connect(b.port("dmm"))
+        _, psu = connect(b.port("psu"))
+        b.dmm.inject("delay", seconds=1.0, count=1)
+        dmm.write(b"*IDN?\n")
+        dmm.flush()
+        wait_until_used(b.dmm, "delay")
+        t = time.monotonic()
+        assert query(psu, "*OPC?") == "1"
+        assert time.monotonic() - t < 0.5
+        assert dmm.readline().startswith(b"scpi-sim,DMM")
+
+
+def test_string_numbers_are_converted():
+    d = Multimeter()
+    d.inject("no_response", count="2")
+    d.inject("offset", value="0.5")
+    assert d.faults == {"no_response": {"count": 2}, "offset": {"value": 0.5}}

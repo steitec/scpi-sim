@@ -22,6 +22,14 @@ if TYPE_CHECKING:
 
 
 class _Handler(socketserver.StreamRequestHandler):
+    def setup(self) -> None:
+        super().setup()
+        self.server.connections.add(self.request)
+
+    def finish(self) -> None:
+        self.server.connections.discard(self.request)
+        super().finish()
+
     def handle(self) -> None:
         for raw in self.rfile:
             if not raw.strip():
@@ -36,6 +44,12 @@ class _Handler(socketserver.StreamRequestHandler):
 class _Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
+    def __init__(self, address: tuple[str, int], handler):
+        # pick IPv4 or IPv6 from the host, so "::1" works like it does for the instruments
+        self.address_family = socket.getaddrinfo(address[0], address[1], type=socket.SOCK_STREAM)[0][0]
+        self.connections: set[socket.socket] = set()
+        super().__init__(address, handler)
+
 
 class ControlServer:
     def __init__(self, bench: Bench, host: str = "127.0.0.1", port: int = 5099):
@@ -49,7 +63,8 @@ class ControlServer:
         self._server = _Server((self.host, self.port), _Handler)
         self._server.control = self
         self.port = self._server.server_address[1]
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True, name="scpi-sim-control")
+        self._thread = threading.Thread(target=self._server.serve_forever, kwargs={"poll_interval": 0.05},
+                                        daemon=True, name="scpi-sim-control")
         self._thread.start()
         return self.port
 
@@ -57,6 +72,11 @@ class ControlServer:
         if self._server is not None:
             self._server.shutdown()
             self._server.server_close()
+            for connection in list(self._server.connections):
+                try:
+                    connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
             self._thread.join(timeout=5)
             self._server = self._thread = None
 

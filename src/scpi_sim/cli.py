@@ -73,15 +73,6 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _value(text: str):
-    for convert in (int, float):
-        try:
-            return convert(text)
-        except ValueError:
-            pass
-    return text
-
-
 def _fault_request(parser: argparse.ArgumentParser, args: argparse.Namespace) -> dict:
     if args.list:
         if args.instrument or args.clear:
@@ -98,7 +89,7 @@ def _fault_request(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         key, sep, value = item.partition("=")
         if not sep or not key:
             parser.error(f"parameter {item!r} is not KEY=VALUE")
-        params[key] = _value(value)
+        params[key] = value  # sent as text; the bench converts per parameter (idn value=007 stays "007")
     return {"instrument": args.instrument, "inject": args.kind, "params": params}
 
 

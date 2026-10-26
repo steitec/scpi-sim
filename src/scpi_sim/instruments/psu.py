@@ -67,7 +67,9 @@ class PowerSupply(Instrument):
         channel = self._channels[number - 1]
         if not channel.output:
             return 0.0, 0.0, "OFF"
-        return operating_point(self.loads[number - 1], channel.volts, channel.amps)
+        load = self.loads[number - 1]
+        snapshot = getattr(load, "snapshot", None)  # a bench resolves its nets once, not per bisection step
+        return operating_point(snapshot() if snapshot else load, channel.volts, channel.amps)
 
     def _limit_query(self, call: Call, setting: float, maximum: float, default: float) -> float:
         arg = call.optional_arg(0)

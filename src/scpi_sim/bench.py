@@ -110,6 +110,10 @@ class _NetLoad:
     def voltage(self, amps: float) -> float | None:
         return self._parallel().voltage(amps)
 
+    def snapshot(self) -> Parallel:
+        """The loads on the net right now, fixed for one operating-point calculation."""
+        return self._parallel()
+
 
 class _DmmInput:
     """What the multimeter input is connected to."""
@@ -155,8 +159,13 @@ class Bench:
             data = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader)
         except OSError as error:
             raise BenchError(f"{path}: {error.strerror or error}") from None
-        except (yaml.YAMLError, BenchError) as error:
+        except BenchError as error:
             raise BenchError(f"{path}: {error}") from None
+        except yaml.YAMLError as error:
+            mark = getattr(error, "problem_mark", None)
+            where = f"line {mark.line + 1}, column {mark.column + 1}: " if mark else ""
+            problem = getattr(error, "problem", None) or str(error).splitlines()[0]
+            raise BenchError(f"{path}: {where}{problem}") from None
         # python loads may live in modules next to the bench file
         folder = str(path.resolve().parent)
         sys.path.insert(0, folder)
@@ -180,6 +189,10 @@ class Bench:
         bench._add_wiring(data.get("wiring") or [])
         bench._check()
         bench.control_port = bench._control_setting(data.get("control"))
+        if bench.control_port:
+            clash = [name for name, port in bench.ports.items() if port == bench.control_port]
+            if clash:
+                raise BenchError(f"control port {bench.control_port} is already used by {clash[0]!r}")
         return bench
 
     def _add_instruments(self, config) -> None:

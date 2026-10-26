@@ -59,3 +59,41 @@ def test_any_failure_is_an_error_answer(monkeypatch):
         r = send_control({"instrument": "dmm", "clear": True}, port=port)
         assert r["ok"] is False and "ZeroDivisionError" in r["error"]
         assert send_control({"list": True}, port=port)["ok"] is True
+
+
+def test_stop_closes_open_control_connections():
+    b = bench_with_control()
+    b.start()
+    s = socket.create_connection(("127.0.0.1", b.control_port), timeout=2)
+    f = s.makefile("rwb")
+    f.write(b'{"list": true}\n')
+    f.flush()
+    assert json.loads(f.readline())["ok"] is True
+    b.stop()
+    assert f.readline() == b""
+    f.close()
+    s.close()
+
+
+def test_control_on_ipv6_loopback():
+    if not socket.has_ipv6:
+        import pytest
+        pytest.skip("no IPv6")
+    try:  # can this machine listen on ::1 at all?
+        with socket.socket(socket.AF_INET6) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        import pytest
+        pytest.skip("::1 not available")
+    b = bench_with_control()
+    b.start(host="::1")
+    try:
+        assert send_control({"list": True}, host="::1", port=b.control_port)["ok"] is True
+    finally:
+        b.stop()
+
+
+def test_text_parameter_stays_text():
+    with bench_with_control() as b:
+        assert send_control({"instrument": "dmm", "inject": "idn", "params": {"value": None}},
+                            port=b.control_port)["ok"] is False
