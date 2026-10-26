@@ -84,3 +84,19 @@ def test_negative_range_uses_magnitude():
 
 def test_negative_overload_is_negative():
     assert Multimeter(volts=-5.0, noise=0).process("MEAS:VOLT? 1") == "-9.90000000E+37"
+
+
+class FixedSource:
+    def volts(self):
+        return 2.5
+
+    def ohms(self):
+        import math
+        return math.inf
+
+
+def test_source_overrides_input():
+    d = Multimeter(noise=0, source=FixedSource())
+    assert d.process("MEAS:VOLT?") == "+2.50000000E+00"
+    assert d.process("MEAS:RES?") == "+9.90000000E+37"
+    assert d.process("MEAS:CURR?") == "+1.00000000E-01"

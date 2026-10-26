@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+from typing import Protocol
 
 from ..instrument import Call, Instrument, scpi
 from ..scpi.params import format_number, parse_number
@@ -18,13 +19,22 @@ _FUNCTIONS = {
 }
 
 
+class InputSource(Protocol):
+    """What is connected to the input terminals (provided by a bench)."""
+
+    def volts(self) -> float: ...
+
+    def ohms(self) -> float: ...
+
+
 class Multimeter(Instrument):
     model = "DMM"
     serial = "SIM00001"
 
     def __init__(self, *, volts: float = 5.0, amps: float = 0.1, ohms: float = 1000.0,
-                 noise: float = 50e-6, seed: int | None = None):
+                 noise: float = 50e-6, seed: int | None = None, source: InputSource | None = None):
         super().__init__()
+        self.source = source
         self.volts = volts
         self.amps = amps
         self.ohms = ohms
@@ -52,7 +62,11 @@ class Multimeter(Instrument):
         self._function, self._range = function, selected
 
     def _read(self) -> float:
-        value = float({"VOLT": self.volts, "CURR": self.amps, "RES": self.ohms}[self._function])
+        if self.source is not None and self._function != "CURR":
+            value = self.source.volts() if self._function == "VOLT" else self.source.ohms()
+        else:
+            value = {"VOLT": self.volts, "CURR": self.amps, "RES": self.ohms}[self._function]
+        value = float(value)
         reading = value * (1 + self._random.gauss(0, self.noise)) if self.noise else value
         limit = self._range if self._range is not None else _FUNCTIONS[self._function][1][-1]
         return math.copysign(OVERLOAD, reading) if abs(reading) > 1.2 * limit else reading
