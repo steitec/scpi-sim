@@ -104,6 +104,8 @@ class Instrument:
         self._ese = 0
         self._sre = 0
         self._faults: dict[str, dict] = {}
+        # called after every message, outside the lock (a bench updates its devices here)
+        self.listeners: list[Callable[[], None]] = []
 
     @property
     def idn(self) -> str:
@@ -175,7 +177,12 @@ class Instrument:
                 if response is not None:
                     responses.append(response)
             if responses and self.take_fault("no_response") is not None:
-                return None
+                responses = []
+        for listener in list(self.listeners):
+            try:
+                listener()
+            except Exception:  # listeners report their own problems
+                pass
         return ";".join(responses) if responses else None
 
     def _dispatch(self, header: tuple[str, ...], is_query: bool, args: tuple[str, ...]) -> str | None:

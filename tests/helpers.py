@@ -35,3 +35,52 @@ wiring:
   - mux.101 -> main
   - mux.common -> dmm.input
 """
+
+
+import time as _time  # noqa: E402
+
+from scpi_sim.device import Device  # noqa: E402
+
+
+class Board(Device):
+    """3.3 V regulator board: 0.5 A for 0.2 s after power-on, then 0.1 A; drives 3V3 when vin >= 4.5 V."""
+
+    terminals = {"vin": "input", "3V3": "output"}
+
+    def __init__(self, short=False):
+        super().__init__()
+        self.short = short
+        self.powered_at = None
+        self.updates = 0
+
+    def update(self):
+        self.updates += 1
+        on = self.input_voltage("vin") >= 4.5
+        if on and self.powered_at is None:
+            self.powered_at = _time.monotonic()
+        if not on:
+            self.powered_at = None
+
+    def current(self, terminal, volts):
+        if self.short:
+            return volts / 0.5
+        if volts < 1 or self.powered_at is None:
+            return 0.01 if volts > 0 else 0.0
+        return 0.5 if _time.monotonic() - self.powered_at < 0.2 else 0.1
+
+    def voltage(self, terminal):
+        return 3.3 if self.input_voltage("vin") >= 4.5 else 0.0
+
+
+class NotADevice:
+    pass
+
+
+class BuggyBoard(Board):
+    def current(self, terminal, volts):
+        raise RuntimeError("bug in current()")
+
+
+class BadUpdateBoard(Board):
+    def update(self):
+        raise RuntimeError("bug in update()")

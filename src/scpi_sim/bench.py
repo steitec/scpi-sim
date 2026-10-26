@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 
 from .control import ControlServer
+from .device import Device
 from .errors import ScpiError
 from .instrument import Instrument
 from .instruments import Multimeter, Multiplexer, PowerSupply
@@ -51,7 +52,8 @@ _TYPES = {
     "mux": (Multiplexer, {"channels": _whole(1, 99)}),
 }
 # names an instrument cannot have: they are attributes of Bench
-_RESERVED = {"instruments", "ports", "control_port", "host", "start", "stop", "port", "resource"}
+_RESERVED = {"instruments", "devices", "ports", "control_port", "host", "start", "stop", "port", "resource",
+             "console_port", "console_url"}
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 _NODE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _WIRE = re.compile(r"\s*(\S+)\s*->\s*(\S+)\s*")
@@ -115,6 +117,16 @@ class _NetLoad:
         return self._parallel()
 
 
+class _DeviceInput:
+    """A device input terminal seen as a load on its net."""
+
+    def __init__(self, device: Device, terminal: str):
+        self.device, self.terminal = device, terminal
+
+    def current(self, volts: float) -> float:
+        return self.device.current(self.terminal, volts)
+
+
 class _DmmInput:
     """What the multimeter input is connected to."""
 
@@ -122,11 +134,7 @@ class _DmmInput:
         self.bench, self.terminal = bench, terminal
 
     def volts(self) -> float:
-        source = self.bench._source_on(self.terminal)
-        if source is None:
-            return 0.0
-        psu, channel = source
-        return psu.output(channel)[0]
+        return self.bench._net_voltage(self.terminal)
 
     def ohms(self) -> float:
         resistors = [load for load in self.bench._loads_on(self.terminal) if isinstance(load, Resistor)]
@@ -140,12 +148,17 @@ class _DmmInput:
 class Bench:
     def __init__(self) -> None:
         self.instruments: dict[str, Instrument] = {}
+        self.devices: dict[str, Device] = {}
+        self._console_ports: dict[str, int] = {}  # device name -> configured console port
         self.ports: dict[str, int] = {}
         self.control_port: int | None = None
         self.host = "127.0.0.1"
         self._loads: dict[str, Load] = {}
         self._static = _Nets()
-        self._sources: dict[str, tuple[PowerSupply, int]] = {}  # terminal -> (psu, channel)
+        # terminals that drive their net: PSU channels -> (psu, channel), device outputs -> (device, terminal)
+        self._sources: dict[str, tuple[PowerSupply | Device, int | str]] = {}
+        self._device_inputs: dict[str, _DeviceInput] = {}
+        self._update_failed: set[str] = set()
         self._servers: dict[str, InstrumentServer] = {}
         self._control: ControlServer | None = None
         self._switch_lock = threading.Lock()  # relay check + switch, across all multiplexers
@@ -180,19 +193,28 @@ class Bench:
     def from_dict(cls, data: dict) -> Bench:
         if not isinstance(data, dict):
             raise BenchError("a bench is a mapping with an 'instruments' key")
-        unknown = set(data) - {"instruments", "loads", "wiring", "control"}
+        unknown = set(data) - {"instruments", "devices", "loads", "wiring", "control"}
         if unknown:
-            raise BenchError(f"unknown key {sorted(unknown)[0]!r} (allowed: instruments, loads, wiring, control)")
+            raise BenchError(f"unknown key {sorted(unknown)[0]!r} "
+                             "(allowed: instruments, devices, loads, wiring, control)")
         bench = cls()
         bench._add_instruments(data.get("instruments"))
+        bench._add_devices(data.get("devices") or {})
         bench._add_loads(data.get("loads") or {})
         bench._add_wiring(data.get("wiring") or [])
         bench._check()
         bench.control_port = bench._control_setting(data.get("control"))
-        if bench.control_port:
-            clash = [name for name, port in bench.ports.items() if port == bench.control_port]
-            if clash:
-                raise BenchError(f"control port {bench.control_port} is already used by {clash[0]!r}")
+        used = {**{f"instrument {n!r}": p for n, p in bench.ports.items()},
+                **{f"console of {n!r}": p for n, p in bench._console_ports.items()}}
+        seen: dict[int, str] = {}
+        for owner, port in used.items():
+            if port and port in seen:
+                raise BenchError(f"port {port} is used by {seen[port]} and {owner}")
+            seen[port] = owner
+        if bench.control_port and bench.control_port in seen:
+            raise BenchError(f"control port {bench.control_port} is already used by {seen[bench.control_port]}")
+        for instrument in bench.instruments.values():
+            instrument.listeners.append(bench._update_devices)
         return bench
 
     def _add_instruments(self, config) -> None:
@@ -268,19 +290,67 @@ class Bench:
                 raise BenchError(f"{where}: unknown type {kind!r} (allowed: resistor, python)")
 
     @staticmethod
-    def _python_load(where: str, settings: dict) -> Load:
-        target = settings.get("class", "")
+    def _import(where: str, target) -> type:
         module_name, _, class_name = str(target).partition(":")
         if not module_name or not class_name:
             raise BenchError(f"{where}: 'class' must look like 'package.module:ClassName'")
         try:
-            factory = getattr(importlib.import_module(module_name), class_name)
+            return getattr(importlib.import_module(module_name), class_name)
+        except Exception as error:  # import errors, missing class
+            raise BenchError(f"{where}: cannot import {target}: {error}") from None
+
+    @classmethod
+    def _python_load(cls, where: str, settings: dict) -> Load:
+        target = settings.get("class", "")
+        factory = cls._import(where, target)
+        try:
             load = factory(**(settings.get("args") or {}))
-        except Exception as error:  # import errors, missing class, bad args
+        except Exception as error:  # bad args, errors in the constructor
             raise BenchError(f"{where}: cannot create {target}: {error}") from None
         if not callable(getattr(load, "current", None)):
             raise BenchError(f"{where}: {target} has no current(volts) method")
         return load
+
+    def _add_devices(self, config) -> None:
+        if not isinstance(config, dict):
+            raise BenchError("'devices' must map names to device settings")
+        for name, settings in config.items():
+            where = f"device {name!r}"
+            if not isinstance(name, str) or not _NAME.fullmatch(name):
+                raise BenchError(f"{where}: names use lowercase letters, digits and '_'")
+            if name in _RESERVED:
+                raise BenchError(f"{where}: reserved name, choose another one")
+            if name in self.instruments:
+                raise BenchError(f"{where}: an instrument is already called {name!r}")
+            if not isinstance(settings, dict):
+                raise BenchError(f"{where}: settings must be a mapping")
+            unknown = set(settings) - {"class", "args", "console"}
+            if unknown:
+                raise BenchError(f"{where}: unknown key {sorted(unknown)[0]!r} (allowed: class, args, console)")
+            target = settings.get("class", "")
+            factory = self._import(where, target)
+            if not (isinstance(factory, type) and issubclass(factory, Device)):
+                raise BenchError(f"{where}: {target} is not a scpi_sim Device subclass")
+            args = settings.get("args") or {}
+            if not isinstance(args, dict):
+                raise BenchError(f"{where}: 'args' must be a mapping")
+            try:
+                device = factory(**args)
+            except Exception as error:
+                raise BenchError(f"{where}: cannot create {target}: {error}") from None
+            if "console" in settings:
+                port = settings["console"]
+                if not isinstance(port, int) or isinstance(port, bool) or not 0 <= port <= 65535:
+                    raise BenchError(f"{where}: 'console' must be a port number 0-65535")
+                self._console_ports[name] = port
+            self.devices[name] = device
+            for terminal, kind in device.terminals.items():
+                full = f"{name}.{terminal}"
+                if kind == "output":
+                    self._sources[full] = (device, terminal)
+                else:
+                    self._device_inputs[full] = _DeviceInput(device, terminal)
+            device.attach(lambda terminal, device_name=name: self._net_voltage(f"{device_name}.{terminal}"))
 
     def _terminal(self, text: str, line: str) -> str:
         where = f"wiring line {line!r}"
@@ -291,9 +361,14 @@ class Bench:
                 raise BenchError(f"{where}: {text!r} is an instrument, name one of its terminals")
             return text
         name, _, pin = text.partition(".")
+        if name in self.devices:
+            if pin not in self.devices[name].terminals:
+                raise BenchError(f"{where}: unknown terminal {text!r} "
+                                 f"(device terminals: {', '.join(self.devices[name].terminals)})")
+            return text
         instrument = self.instruments.get(name)
         if instrument is None:
-            raise BenchError(f"{where}: unknown instrument {name!r}")
+            raise BenchError(f"{where}: unknown instrument or device {name!r}")
         valid = (
             (pin == "input") if isinstance(instrument, Multimeter) else
             (text in self._sources) if isinstance(instrument, PowerSupply) else
@@ -353,15 +428,31 @@ class Bench:
     def _loads_on(self, terminal: str) -> Iterable[Load]:
         nets = self._nets()
         net = nets.find(terminal)
-        return [load for node, load in self._loads.items() if nets.find(node) == net]
+        loads = [load for node, load in self._loads.items() if nets.find(node) == net]
+        loads += [load for name, load in self._device_inputs.items() if nets.find(name) == net]
+        return loads
 
-    def _source_on(self, terminal: str) -> tuple[PowerSupply, int] | None:
+    def _net_voltage(self, terminal: str) -> float:
+        """Voltage of the net ``terminal`` is on: from the supply or device output driving it, else 0."""
         nets = self._nets()
         net = nets.find(terminal)
-        for source, value in self._sources.items():
+        for source, (owner, pin) in self._sources.items():
             if nets.find(source) == net:
-                return value
-        return None
+                if isinstance(owner, PowerSupply):
+                    return owner.output(pin)[0]
+                volts = owner.voltage(pin)
+                return 0.0 if volts is None else float(volts)
+        return 0.0
+
+    def _update_devices(self) -> None:
+        for name, device in self.devices.items():
+            try:
+                device.update()
+            except Exception as error:
+                if name not in self._update_failed:
+                    self._update_failed.add(name)
+                    print(f"scpi-sim: device {name}: update() failed: {type(error).__name__}: {error}",
+                          file=sys.stderr)
 
     # --- running ----------------------------------------------------------------------
 
@@ -400,8 +491,9 @@ class Bench:
     def __exit__(self, *exc) -> None:
         self.stop()
 
-    def __getattr__(self, name: str) -> Instrument:
-        instruments = self.__dict__.get("instruments", {})
-        if name in instruments:
-            return instruments[name]
+    def __getattr__(self, name: str) -> Instrument | Device:
+        for registry in ("instruments", "devices"):
+            items = self.__dict__.get(registry, {})
+            if name in items:
+                return items[name]
         raise AttributeError(name)
