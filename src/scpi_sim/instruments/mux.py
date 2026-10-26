@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from ..instrument import Call, Instrument, scpi
 from ..scpi.params import parse_channel_list
 
@@ -16,6 +18,9 @@ class Multiplexer(Instrument):
             raise ValueError("channels must be between 1 and 99")
         self.valid_channels = range(101, 101 + channels)
         self.closed: set[int] = set()
+        # called with the would-be set of closed channels before ROUT:CLOS changes
+        # anything; may raise ScpiError to refuse (used by the bench)
+        self.before_close: Callable[[set[int]], None] | None = None
 
     def reset(self) -> None:
         super().reset()
@@ -26,7 +31,10 @@ class Multiplexer(Instrument):
 
     @scpi("ROUTe:CLOSe")
     def close(self, call: Call) -> None:
-        self.closed.update(self._channels(call))
+        closed = self.closed | set(self._channels(call))
+        if self.before_close is not None:
+            self.before_close(closed)
+        self.closed = closed
 
     @scpi("ROUTe:OPEN")
     def open(self, call: Call) -> None:

@@ -41,7 +41,7 @@ class Parallel:
     loads: tuple[Load, ...]
 
     def current(self, volts: float) -> float:
-        return sum(load.current(volts) for load in self.loads)
+        return sum((load.current(volts) for load in self.loads), 0.0)
 
     def voltage(self, amps: float) -> float | None:
         """Exact only for resistors; None means: use bisection."""
