@@ -7,8 +7,9 @@ from .instruments import Multimeter, Multiplexer, PowerSupply  # noqa: E402
 from .loads import Parallel, Resistor  # noqa: E402
 from .transport import InstrumentServer  # noqa: E402
 from .bench import Bench, BenchError  # noqa: E402
+from .device import Console, Device  # noqa: E402
 
 __all__ = [
-    "Bench", "BenchError", "Instrument", "InstrumentServer", "Multimeter", "Multiplexer",
+    "Bench", "BenchError", "Console", "Device", "Instrument", "InstrumentServer", "Multimeter", "Multiplexer",
     "Parallel", "PowerSupply", "Resistor", "scpi", "__version__",
 ]
