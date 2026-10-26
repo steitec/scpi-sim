@@ -20,16 +20,19 @@ def start(*args, **popen_kwargs):
     return p, line, port
 
 
-@pytest.mark.skipif(os.name == "nt", reason="no SIGINT to child processes on Windows")
 def test_serve_psu_and_stop():
     p, line, port = start("psu", "--channels", "2", "--load", "10")
     try:
         assert line.startswith("scpi-sim: PSU listening on 127.0.0.1:")
         _, f = connect(port)
         assert query(f, "INST:NSEL 2;:VOLT 5;:CURR 1;:OUTP ON;:MEAS:CURR?") == "+5.00000000E-01"
-        p.send_signal(signal.SIGINT)
-        assert p.wait(5) == 0
-        assert "scpi-sim: stopped" in p.stdout.read()
+        if os.name == "nt":  # no SIGINT to child processes on Windows
+            p.terminate()
+            p.wait(5)
+        else:
+            p.send_signal(signal.SIGINT)
+            assert p.wait(5) == 0
+            assert "scpi-sim: stopped" in p.stdout.read()
     finally:
         p.kill()
         p.communicate()
@@ -91,3 +94,24 @@ def test_port_out_of_range_exit_2(port, capsys):
         main(["serve", "dmm", "--port", port])
     assert e.value.code == 2
     assert "0-65535" in capsys.readouterr().err
+
+
+def test_query_command_prints_responses(capsys):
+    with InstrumentServer(Multimeter(volts=1.8, noise=0), port=0) as srv:
+        rc = main(["query", "--port", str(srv.port), "*IDN?", "CONF:RES", "MEAS:VOLT?"])
+    assert rc == 0
+    assert capsys.readouterr().out == "scpi-sim,DMM,SIM00001,0.1.0\n+1.80000000E+00\n"
+
+
+def test_query_command_connection_refused(capsys):
+    with InstrumentServer(Multimeter(), port=0) as srv:
+        port = srv.port
+    assert main(["query", "--port", str(port), "*IDN?"]) == 1
+    assert "cannot connect" in capsys.readouterr().err
+
+
+def test_query_command_timeout_when_no_answer(capsys):
+    with InstrumentServer(Multimeter(), port=0) as srv:
+        # "FOO?" is undefined: the instrument queues -113 and sends nothing
+        assert main(["query", "--port", str(srv.port), "--timeout", "0.3", "FOO?"]) == 1
+    assert "no response" in capsys.readouterr().err

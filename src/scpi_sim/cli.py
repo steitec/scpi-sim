@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import signal
+import socket
 import sys
 import threading
 
@@ -49,7 +50,38 @@ def _parser() -> argparse.ArgumentParser:
 
     mux = kind("mux", "relay multiplexer (channels 101...)")
     mux.add_argument("--channels", type=int, default=16, help="number of channels, 1-99")
+
+    q = commands.add_parser("query", help="send SCPI messages to an instrument and print the answers")
+    q.add_argument("messages", nargs="+", metavar="MESSAGE", help='e.g. "*IDN?" "VOLT 5" "MEAS:VOLT?"')
+    q.add_argument("--host", default="127.0.0.1", help="instrument address (default: 127.0.0.1)")
+    q.add_argument("--port", type=_port, default=5025, help="TCP port (default: 5025)")
+    q.add_argument("--timeout", type=float, default=2.0, help="seconds to wait for an answer (default: 2)")
     return parser
+
+
+def _query(args: argparse.Namespace) -> int:
+    """A minimal cross-platform client, so the examples do not depend on nc."""
+    try:
+        sock = socket.create_connection((args.host, args.port), timeout=args.timeout)
+    except OSError as error:
+        print(f"scpi-sim: error: cannot connect to {args.host}:{args.port}: {error.strerror or error}",
+              file=sys.stderr)
+        return 1
+    with sock, sock.makefile("rwb") as stream:
+        for message in args.messages:
+            stream.write(message.encode() + b"\n")
+            stream.flush()
+            if "?" not in message:
+                continue
+            try:
+                answer = stream.readline()
+            except OSError:  # socket timeout
+                answer = b""
+            if not answer:
+                print(f"scpi-sim: error: no response to {message!r} (check SYST:ERR?)", file=sys.stderr)
+                return 1
+            print(answer.decode(errors="replace").rstrip("\r\n"), flush=True)
+    return 0
 
 
 def _instrument(args: argparse.Namespace) -> Instrument:
@@ -63,6 +95,8 @@ def _instrument(args: argparse.Namespace) -> Instrument:
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.command == "query":
+        return _query(args)
     try:
         instrument = _instrument(args)
     except ValueError as error:
