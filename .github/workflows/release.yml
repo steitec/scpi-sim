@@ -1,6 +1,7 @@
 name: Release
 
-# Publishes to PyPI when a version tag (v1.2.3) is pushed.
+# Publishes to PyPI when a version tag (v1.2.3) is pushed: runs the tests,
+# checks that the tag matches the package version, builds, then publishes.
 # Needs a Trusted Publisher on PyPI for this repository and workflow
 # (environment "pypi"); no API token is stored in the repository.
 
@@ -9,14 +10,36 @@ on:
     tags: ["v*"]
 
 jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: pytest -v
+      - run: pytest -v examples --scpi-bench examples/bench.yaml
+
   build:
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install build twine
+      - name: Tag must match the package version
+        run: |
+          version=$(python -c "import sys; sys.path.insert(0, 'src'); import ast, pathlib; \
+            tree = ast.parse(pathlib.Path('src/scpi_sim/__init__.py').read_text()); \
+            print(next(n.value.value for n in tree.body if isinstance(n, ast.Assign) and n.targets[0].id == '__version__'))")
+          echo "tag ${GITHUB_REF_NAME}, __version__ ${version}"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+      - run: pip install "build>=1.2" "twine>=6"
       - run: python -m build
       - run: twine check dist/*
       - uses: actions/upload-artifact@v4

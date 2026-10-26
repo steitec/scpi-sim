@@ -20,6 +20,12 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 
+[project.urls]
+Homepage = "https://github.com/steitec/scpi-sim"
+Repository = "https://github.com/steitec/scpi-sim"
+Changelog = "https://github.com/steitec/scpi-sim/blob/main/CHANGELOG.md"
+Issues = "https://github.com/steitec/scpi-sim/issues"
+
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyvisa>=1.13", "pyvisa-py>=0.7"]
 

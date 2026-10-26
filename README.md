@@ -4,7 +4,7 @@ Simulated SCPI lab instruments — a multimeter, a power supply and a relay
 multiplexer — that listen on a raw TCP socket like real LAN instruments on
 port 5025. Develop and test instrument automation without the hardware.
 
-![Demo: a simulated power supply driven from the command line](docs/demo.gif)
+![Demo: a simulated power supply driven from the command line](https://raw.githubusercontent.com/steitec/scpi-sim/main/docs/demo.gif)
 
 ```console
 $ scpi-sim serve psu --load 24 &
@@ -267,8 +267,9 @@ ok
 | `offset` | `value` | multimeter: added to every reading |
 | `noise` | `sigma` | multimeter: replaces the noise of the readings |
 
-Faults stay active until cleared (`*RST` and `*CLS` do not clear them) and
-belong to the instrument, not to a connection. From Python:
+Faults stay active until cleared or used up (`no_response`, `disconnect` and
+`delay` with a `count`); `*RST` and `*CLS` do not clear them. They belong to
+the instrument, not to a connection. From Python:
 `bench.dmm.inject("offset", value=0.2)`, `bench.dmm.clear_faults()`.
 
 The control port speaks one JSON object per line:
@@ -303,7 +304,7 @@ def test_dead_multimeter_raises_timeout(scpi_bench):
   `scpi_bench.port(name)` the port, `scpi_bench.<name>` the instrument object.
 - `scpi_bench_factory(path_or_dict)` starts further benches.
 
-[`examples/test_example.py`](examples/test_example.py) is a complete example:
+[`examples/test_example.py`](https://github.com/steitec/scpi-sim/blob/main/examples/test_example.py) is a complete example:
 `pytest examples --scpi-bench examples/bench.yaml`.
 
 ## SCPI behaviour

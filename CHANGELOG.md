@@ -16,6 +16,9 @@ All notable changes to this project are documented here. The format follows
   operating point for any of them.
 - A relay that would connect two supply outputs is refused with
   `-221,"Settings conflict"`.
+- Bench files are checked strictly: duplicate keys, wrong option types and
+  unknown terminals are reported with the offending key or line.
+- Python loads are imported from the bench file's folder as well.
 - **Fault injection**: `no_response`, `delay`, `disconnect`, `error`, `idn`,
   `offset`, `noise` — from Python (`instrument.inject(...)`), from pytest, or
   into a running bench with `scpi-sim fault` through a JSON control port.
