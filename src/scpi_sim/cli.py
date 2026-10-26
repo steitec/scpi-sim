@@ -1,4 +1,4 @@
-"""Command line interface: ``scpi-sim serve dmm|psu|mux``."""
+"""Command line interface: ``scpi-sim serve``, ``query`` and ``fault``."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import sys
 import threading
 
 from . import __version__
+from .bench import Bench, BenchError
+from .control import send_control
 from .instrument import Instrument
 from .instruments import Multimeter, Multiplexer, PowerSupply
 from .transport import InstrumentServer
@@ -28,8 +30,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="scpi-sim", description="Simulated SCPI lab instruments on a raw TCP socket.")
     parser.add_argument("--version", action="version", version=f"scpi-sim {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
-    serve = commands.add_parser("serve", help="serve one simulated instrument")
-    kinds = serve.add_subparsers(dest="kind", required=True, metavar="INSTRUMENT")
+    serve = commands.add_parser("serve", help="serve one simulated instrument, or a whole bench")
+    serve.add_argument("--bench", metavar="FILE", help="serve all instruments of a bench file (YAML)")
+    serve.add_argument("--host", dest="bench_host", default="127.0.0.1",
+                       help="with --bench: address to listen on (default: 127.0.0.1)")
+    kinds = serve.add_subparsers(dest="kind", metavar="INSTRUMENT")
 
     def kind(name: str, help: str) -> argparse.ArgumentParser:
         p = kinds.add_parser(name, help=help)
@@ -56,7 +61,104 @@ def _parser() -> argparse.ArgumentParser:
     q.add_argument("--host", default="127.0.0.1", help="instrument address (default: 127.0.0.1)")
     q.add_argument("--port", type=_port, default=5025, help="TCP port (default: 5025)")
     q.add_argument("--timeout", type=float, default=2.0, help="seconds to wait for an answer (default: 2)")
+
+    f = commands.add_parser("fault", help="inject or clear faults in a running bench (via its control port)")
+    f.add_argument("instrument", nargs="?", help="instrument name from the bench file")
+    f.add_argument("kind", nargs="?", help="no_response, delay, disconnect, error, idn, offset, noise")
+    f.add_argument("params", nargs="*", metavar="KEY=VALUE", help="fault parameters, e.g. sigma=0.05")
+    f.add_argument("--clear", action="store_true", help="clear all faults of the instrument")
+    f.add_argument("--list", action="store_true", help="list the active faults of all instruments")
+    f.add_argument("--host", default="127.0.0.1", help="bench address (default: 127.0.0.1)")
+    f.add_argument("--control-port", type=_port, default=5099, help="control port (default: 5099)")
     return parser
+
+
+def _value(text: str):
+    for convert in (int, float):
+        try:
+            return convert(text)
+        except ValueError:
+            pass
+    return text
+
+
+def _fault_request(parser: argparse.ArgumentParser, args: argparse.Namespace) -> dict:
+    if args.list:
+        if args.instrument or args.clear:
+            parser.error("--list takes no other arguments")
+        return {"list": True}
+    if not args.instrument or bool(args.kind) == args.clear:
+        parser.error("fault needs INSTRUMENT and either KIND [KEY=VALUE ...] or --clear")
+    if args.clear:
+        if args.params:
+            parser.error("--clear takes no parameters")
+        return {"instrument": args.instrument, "clear": True}
+    params = {}
+    for item in args.params:
+        key, sep, value = item.partition("=")
+        if not sep or not key:
+            parser.error(f"parameter {item!r} is not KEY=VALUE")
+        params[key] = _value(value)
+    return {"instrument": args.instrument, "inject": args.kind, "params": params}
+
+
+def _fault(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    request = _fault_request(parser, args)
+    try:
+        answer = send_control(request, host=args.host, port=args.control_port)
+    except OSError as error:
+        print(f"scpi-sim: error: cannot connect to control port {args.host}:{args.control_port}: "
+              f"{getattr(error, 'strerror', None) or error}", file=sys.stderr)
+        return 1
+    if not answer.get("ok"):
+        print(f"scpi-sim: error: {answer.get('error')}", file=sys.stderr)
+        return 1
+    if "faults" in answer:
+        for name, faults in answer["faults"].items():
+            text = "; ".join(kind + "".join(f" {k}={v}" for k, v in params.items() if v is not None)
+                             for kind, params in faults.items())
+            print(f"{name}: {text or '-'}")
+    else:
+        print("ok")
+    return 0
+
+
+def _stop_event() -> threading.Event:
+    """Set on SIGINT/SIGTERM. Install before announcing the server, so no signal is lost."""
+    stop = threading.Event()
+    # Install SIGINT explicitly: a shell starts "scpi-sim serve ... &" with SIGINT ignored.
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop.set())
+    return stop
+
+
+def _wait(stop: threading.Event) -> None:
+    while not stop.wait(0.5):
+        pass
+
+
+def _serve_bench(args: argparse.Namespace) -> int:
+    try:
+        bench = Bench.from_file(args.bench)
+    except BenchError as error:
+        print(f"scpi-sim: error: {error}", file=sys.stderr)
+        return 2
+    host = args.bench_host
+    try:
+        bench.start(host=host)
+    except OSError as error:
+        print(f"scpi-sim: error: cannot start bench on {host}: {error.strerror or error}", file=sys.stderr)
+        return 1
+    stop = _stop_event()
+    for name, instrument in bench.instruments.items():
+        print(f"scpi-sim: {name} ({instrument.model}) listening on {host}:{bench.port(name)}")
+    if bench.control_port is not None:
+        print(f"scpi-sim: control on {host}:{bench.control_port}")
+    print("scpi-sim: bench running (Ctrl+C to stop)", flush=True)
+    _wait(stop)
+    bench.stop()
+    print("scpi-sim: stopped", flush=True)
+    return 0
 
 
 def _query(args: argparse.Namespace) -> int:
@@ -97,6 +199,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "query":
         return _query(args)
+    if args.command == "fault":
+        return _fault(parser, args)
+    if bool(args.bench) == bool(args.kind):
+        parser.error("serve needs either an instrument (dmm, psu, mux) or --bench FILE")
+    if args.bench:
+        return _serve_bench(args)
     try:
         instrument = _instrument(args)
     except ValueError as error:
@@ -110,13 +218,9 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
-    stop = threading.Event()
-    # Install SIGINT explicitly: a shell starts "scpi-sim serve ... &" with SIGINT ignored.
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, lambda *_: stop.set())
+    stop = _stop_event()
     print(f"scpi-sim: {instrument.model} listening on {args.host}:{server.port} (Ctrl+C to stop)", flush=True)
-    while not stop.wait(0.5):
-        pass
+    _wait(stop)
     server.stop()
     print("scpi-sim: stopped", flush=True)
     return 0

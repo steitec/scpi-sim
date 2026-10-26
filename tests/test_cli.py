@@ -116,3 +116,97 @@ def test_query_command_timeout_when_no_answer(capsys):
         # "FOO?" is undefined: the instrument queues -113 and sends nothing
         assert main(["query", "--port", str(srv.port), "--timeout", "0.3", "FOO?"]) == 1
     assert "no response" in capsys.readouterr().err
+
+
+def _start_bench(path):
+    p = subprocess.Popen([sys.executable, "-m", "scpi_sim.cli", "serve", "--bench", str(path)],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    lines = [p.stdout.readline().strip() for _ in range(4)]
+    ports = {}
+    for line in lines:
+        m = re.search(r"^scpi-sim: (\w+) .*:(\d+)", line)
+        assert m, (line, p.stderr.read() if p.poll() is not None else "")
+        ports[m.group(1)] = int(m.group(2))
+    return p, ports
+
+
+def test_serve_bench_and_fault_cli(tmp_path, capsys):
+    from helpers import BASIC
+    f = tmp_path / "bench.yaml"
+    f.write_text(BASIC + "control: 0\n")
+    p, ports = _start_bench(f)
+    try:
+        assert main(["fault", "dmm", "offset", "value=0.5", "--control-port", str(ports["control"])]) == 0
+        assert main(["fault", "--list", "--control-port", str(ports["control"])]) == 0
+        assert "dmm: offset value=0.5" in capsys.readouterr().out
+        _, s = connect(ports["mux"])
+        assert query(s, "ROUT:CLOS (@101);*OPC?") == "1"
+        _, s = connect(ports["psu"])
+        assert query(s, "VOLT 3;CURR 1;:OUTP ON;*OPC?") == "1"
+        _, s = connect(ports["dmm"])
+        assert query(s, "MEAS:VOLT?") == "+3.50000000E+00"
+        assert main(["fault", "dmm", "--clear", "--control-port", str(ports["control"])]) == 0
+        assert query(s, "MEAS:VOLT?") == "+3.00000000E+00"
+    finally:
+        p.kill()
+        p.communicate()
+
+
+def test_fault_cli_rejected_fault(tmp_path, capsys):
+    from helpers import BASIC
+    f = tmp_path / "bench.yaml"
+    f.write_text(BASIC + "control: 0\n")
+    p, ports = _start_bench(f)
+    try:
+        assert main(["fault", "psu", "offset", "value=1", "--control-port", str(ports["control"])]) == 1
+        assert "not supported" in capsys.readouterr().err
+    finally:
+        p.kill()
+        p.communicate()
+
+
+def test_serve_bench_config_error_exit_2(tmp_path):
+    f = tmp_path / "bench.yaml"
+    f.write_text("instruments: {x: {type: scope, port: 0}}\n")
+    r = subprocess.run([sys.executable, "-m", "scpi_sim.cli", "serve", "--bench", str(f)],
+                       capture_output=True, text=True, timeout=10)
+    assert r.returncode == 2 and "scope" in r.stderr and "Traceback" not in r.stderr
+
+
+def test_serve_needs_exactly_one_mode(tmp_path):
+    with pytest.raises(SystemExit) as e:
+        main(["serve"])
+    assert e.value.code == 2
+    with pytest.raises(SystemExit) as e:
+        main(["serve", "--bench", str(tmp_path / "b.yaml"), "dmm"])
+    assert e.value.code == 2
+
+
+def test_fault_cli_unreachable(capsys):
+    with InstrumentServer(Multimeter(), port=0) as srv:
+        port = srv.port
+    assert main(["fault", "dmm", "--clear", "--control-port", str(port)]) == 1
+    assert "cannot connect" in capsys.readouterr().err
+
+
+def test_fault_cli_needs_kind_or_clear(capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["fault", "dmm"])
+    assert e.value.code == 2
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX signals")
+def test_bench_stops_on_sigint_right_after_start(tmp_path):
+    from helpers import BASIC
+    f = tmp_path / "bench.yaml"
+    f.write_text(BASIC)
+    p = subprocess.Popen([sys.executable, "-m", "scpi_sim.cli", "serve", "--bench", str(f)],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                         preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
+    try:
+        p.stdout.readline()  # first line printed -> handlers must already be installed
+        p.send_signal(signal.SIGINT)
+        assert p.wait(5) == 0
+    finally:
+        p.kill()
+        p.communicate()

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import yaml
 
+from .control import ControlServer
 from .errors import ScpiError
 from .instrument import Instrument
 from .instruments import Multimeter, Multiplexer, PowerSupply
@@ -101,6 +102,7 @@ class Bench:
         self._static = _Nets()
         self._sources: dict[str, tuple[PowerSupply, int]] = {}  # terminal -> (psu, channel)
         self._servers: dict[str, InstrumentServer] = {}
+        self._control: ControlServer | None = None
 
     # --- construction -------------------------------------------------------------
 
@@ -130,7 +132,7 @@ class Bench:
         bench._add_loads(data.get("loads") or {})
         bench._add_wiring(data.get("wiring") or [])
         bench._check()
-        bench.control_port = bench._control(data.get("control"))
+        bench.control_port = bench._control_setting(data.get("control"))
         return bench
 
     def _add_instruments(self, config) -> None:
@@ -249,7 +251,7 @@ class Bench:
         self._check_sources(self._static, error=lambda msg: BenchError(msg))
 
     @staticmethod
-    def _control(value) -> int | None:
+    def _control_setting(value) -> int | None:
         if value is None:
             return None
         if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 65535:
@@ -301,12 +303,18 @@ class Bench:
                 server = InstrumentServer(instrument, host=host, port=0 if free_ports else self.ports[name])
                 server.start()
                 self._servers[name] = server
+            if self.control_port is not None:
+                self._control = ControlServer(self, host=host, port=0 if free_ports else self.control_port)
+                self.control_port = self._control.start()
         except BaseException:
             self.stop()
             raise
         self.host = host
 
     def stop(self) -> None:
+        if self._control is not None:
+            self._control.stop()
+            self._control = None
         for server in self._servers.values():
             server.stop()
         self._servers.clear()
