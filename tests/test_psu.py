@@ -1,4 +1,5 @@
 from scpi_sim.instruments import PowerSupply
+from scpi_sim import __version__
 
 
 def test_output_off_reads_zero():
@@ -57,7 +58,7 @@ def test_rst():
 
 
 def test_idn():
-    assert PowerSupply().process("*IDN?") == "scpi-sim,PSU,SIM00002,0.1.0"
+    assert PowerSupply().process("*IDN?") == f"scpi-sim,PSU,SIM00002,{__version__}"
 
 
 def test_extra_parameter_not_silently_ignored():

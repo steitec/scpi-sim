@@ -7,6 +7,7 @@ import pytest
 from helpers import connect, query
 from scpi_sim import Multimeter, PowerSupply
 from scpi_sim.transport import InstrumentServer
+from scpi_sim import __version__
 
 
 @pytest.fixture
@@ -17,7 +18,7 @@ def server():
 
 def test_idn_over_tcp(server):
     _, f = connect(server.port)
-    assert query(f, "*IDN?") == "scpi-sim,DMM,SIM00001,0.1.0"
+    assert query(f, "*IDN?") == f"scpi-sim,DMM,SIM00001,{__version__}"
 
 
 def test_command_without_query_sends_nothing(server):
@@ -68,7 +69,7 @@ def test_concurrent_clients_get_their_own_answers():
             _, f = connect(srv.port)
             for i in range(100):
                 answer = query(f, f"*IDN?;:INST:NSEL?;:SOUR{n}:VOLT {i % 30};:SOUR{n}:VOLT?")
-                expected = f"scpi-sim,PSU,SIM00002,0.1.0;1;{float(i % 30):+.8E}"
+                expected = f"scpi-sim,PSU,SIM00002,{__version__};1;{float(i % 30):+.8E}"
                 if answer != expected:
                     errors.append((n, answer))
 

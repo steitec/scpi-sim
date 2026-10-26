@@ -1,4 +1,5 @@
 from scpi_sim.instruments import Multimeter
+from scpi_sim import __version__
 
 
 def test_measure_voltage_exact():
@@ -66,7 +67,7 @@ def test_python_side_input_change():
 
 
 def test_idn():
-    assert Multimeter().process("*IDN?") == "scpi-sim,DMM,SIM00001,0.1.0"
+    assert Multimeter().process("*IDN?") == f"scpi-sim,DMM,SIM00001,{__version__}"
 
 
 def test_measure_accepts_resolution_argument():

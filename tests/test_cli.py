@@ -10,6 +10,7 @@ from helpers import connect, query
 from scpi_sim import Multimeter
 from scpi_sim.cli import main
 from scpi_sim.transport import InstrumentServer
+from scpi_sim import __version__
 
 
 def start(*args, **popen_kwargs):
@@ -78,7 +79,7 @@ def test_bad_channels_exit_2(args):
 def test_version(capsys):
     with pytest.raises(SystemExit):
         main(["--version"])
-    assert "0.1.0" in capsys.readouterr().out
+    assert __version__ in capsys.readouterr().out
 
 
 def test_negative_load_exit_2():
@@ -100,7 +101,7 @@ def test_query_command_prints_responses(capsys):
     with InstrumentServer(Multimeter(volts=1.8, noise=0), port=0) as srv:
         rc = main(["query", "--port", str(srv.port), "*IDN?", "CONF:RES", "MEAS:VOLT?"])
     assert rc == 0
-    assert capsys.readouterr().out == "scpi-sim,DMM,SIM00001,0.1.0\n+1.80000000E+00\n"
+    assert capsys.readouterr().out == f"scpi-sim,DMM,SIM00001,{__version__}\n+1.80000000E+00\n"
 
 
 def test_query_command_connection_refused(capsys):

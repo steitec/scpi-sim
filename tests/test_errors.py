@@ -11,3 +11,8 @@ def test_custom_message():
 
 def test_no_error_entry():
     assert STANDARD_ERRORS[0] == "No error"
+
+
+def test_version_is_0_2_0():
+    import scpi_sim
+    assert scpi_sim.__version__ == "0.2.0"

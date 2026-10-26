@@ -1,4 +1,5 @@
 from scpi_sim.instrument import Instrument, scpi
+from scpi_sim import __version__
 
 
 class Dummy(Instrument):
@@ -26,7 +27,7 @@ class Dummy(Instrument):
 
 
 def test_idn():
-    assert Dummy().process("*IDN?") == "scpi-sim,DUMMY,SIM99999,0.1.0"
+    assert Dummy().process("*IDN?") == f"scpi-sim,DUMMY,SIM99999,{__version__}"
 
 
 def test_set_and_query_joined():

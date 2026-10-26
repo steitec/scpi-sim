@@ -1,6 +1,7 @@
 import pytest
 
 from scpi_sim.instruments import Multiplexer
+from scpi_sim import __version__
 
 
 def test_close_query_state():
@@ -40,7 +41,7 @@ def test_channel_count_validated():
 
 
 def test_idn():
-    assert Multiplexer().process("*IDN?") == "scpi-sim,MUX,SIM00003,0.1.0"
+    assert Multiplexer().process("*IDN?") == f"scpi-sim,MUX,SIM00003,{__version__}"
 
 
 def test_huge_channel_range_rejected_quickly():
