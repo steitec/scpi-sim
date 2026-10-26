@@ -103,3 +103,18 @@ def test_source_suffix_selects_channel():
     assert p.process("INST:NSEL?") == "1"
     p.process("SOUR3:VOLT 1")
     assert p.process("SYST:ERR?").startswith("-114")
+
+
+def test_python_load_object_per_channel():
+    from scpi_sim.loads import Resistor
+    p = PowerSupply(channels=2)
+    p.loads[1] = Resistor(10)
+    p.process("INST:NSEL 2;:VOLT 5;:CURR 1;:OUTP ON")
+    assert p.process("MEAS:CURR?") == "+5.00000000E-01"
+
+
+def test_load_and_load_ohms_exclusive():
+    import pytest
+    from scpi_sim.loads import Resistor
+    with pytest.raises(ValueError):
+        PowerSupply(load=Resistor(1), load_ohms=1)

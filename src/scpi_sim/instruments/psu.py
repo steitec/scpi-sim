@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from ..errors import ScpiError
 from ..instrument import Call, Instrument, scpi
+from ..loads import Load, Resistor, operating_point
 from ..scpi.params import parse_bool, parse_number
 
 DEFAULT_VOLTS = 0.0
@@ -24,15 +25,19 @@ class PowerSupply(Instrument):
     model = "PSU"
     serial = "SIM00002"
 
-    def __init__(self, *, channels: int = 1, load_ohms: float | None = None,
+    def __init__(self, *, channels: int = 1, load: Load | None = None, load_ohms: float | None = None,
                  max_volts: float = 30.0, max_amps: float = 3.0):
         super().__init__()
         if channels < 1:
             raise ValueError("channels must be at least 1")
-        if load_ohms is not None and load_ohms < 0:
-            raise ValueError("load must not be negative")
+        if load is not None and load_ohms is not None:
+            raise ValueError("give either load or load_ohms, not both")
+        if load_ohms is not None:
+            if load_ohms < 0:
+                raise ValueError("load must not be negative")
+            load = Resistor(load_ohms)
         self.channel_count = channels
-        self.load_ohms = load_ohms
+        self.loads: list[Load | None] = [load] * channels  # what each output drives
         self.max_volts = max_volts
         self.max_amps = max_amps
         self.reset()
@@ -54,14 +59,11 @@ class PowerSupply(Instrument):
         """Actual (volts, amps, mode) at the output terminals."""
         if not channel.output:
             return 0.0, 0.0, "OFF"
-        if self.load_ohms is None:
-            return channel.volts, 0.0, "CV"
-        if self.load_ohms == 0:  # short circuit: any voltage drives it into the current limit
-            return (0.0, channel.amps, "CC") if channel.volts > 0 else (0.0, 0.0, "CV")
-        amps = channel.volts / self.load_ohms
-        if amps > channel.amps:
-            return channel.amps * self.load_ohms, channel.amps, "CC"
-        return channel.volts, amps, "CV"
+        return operating_point(self.loads[self._channels.index(channel)], channel.volts, channel.amps)
+
+    def output(self, number: int) -> tuple[float, float, str]:
+        """(volts, amps, mode) at output ``number`` (1-based), for the bench."""
+        return self._output(self._channels[number - 1])
 
     def _limit_query(self, call: Call, setting: float, maximum: float, default: float) -> float:
         arg = call.optional_arg(0)
