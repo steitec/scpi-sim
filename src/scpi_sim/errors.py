@@ -16,6 +16,7 @@ STANDARD_ERRORS: dict[int, str] = {
     -222: "Data out of range",
     -223: "Too much data",
     -224: "Illegal parameter value",
+    -230: "Data corrupt or stale",
     -300: "Device-specific error",
     -350: "Queue overflow",
 }

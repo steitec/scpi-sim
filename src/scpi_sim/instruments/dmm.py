@@ -64,12 +64,16 @@ class Multimeter(Instrument):
             selected = next(r for r in ranges if r >= abs(value))
         self._function, self._range = function, selected
 
-    def _read(self) -> float:
-        if self.source is not None and self._function != "CURR":
-            value = self.source.volts() if self._function == "VOLT" else self.source.ohms()
+    def _input(self, function: str) -> float:
+        """What is at the input for ``function``, before noise and range."""
+        if self.source is not None and function != "CURR":
+            value = self.source.volts() if function == "VOLT" else self.source.ohms()
         else:
-            value = {"VOLT": self.volts, "CURR": self.amps, "RES": self.ohms}[self._function]
-        value = float(value)
+            value = {"VOLT": self.volts, "CURR": self.amps, "RES": self.ohms}[function]
+        return float(value)
+
+    def _read(self) -> float:
+        value = self._input(self._function)
         noise = self._faults["noise"]["sigma"] if "noise" in self._faults else self.noise
         reading = value * (1 + self._random.gauss(0, noise)) if noise else value
         limit = self._range if self._range is not None else self.RANGES[self._function][1][-1]
