@@ -17,6 +17,7 @@ from .keysight_psu import KeysightE36312A
 from .siglent_psu import SiglentSpd3303x
 from .rs_dmm import RsHmc8012
 from .siglent_dmm import SiglentSdm3065x
+from .keithley import KeithleyDaq6510, KeithleyDmm6500
 
 PROFILES: dict[str, type[Instrument]] = {cls.profile: cls for cls in (
     RsHmp4040,
@@ -25,8 +26,10 @@ PROFILES: dict[str, type[Instrument]] = {cls.profile: cls for cls in (
     SiglentSpd3303x,
     RsHmc8012,
     Keysight34461A,
+    KeithleyDmm6500,
     SiglentSdm3065x,
     KeysightDaq970A,
+    KeithleyDaq6510,
 )}
 
 
