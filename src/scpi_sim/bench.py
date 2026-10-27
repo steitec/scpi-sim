@@ -118,6 +118,9 @@ class _NetLoad:
         return self._parallel()
 
 
+_in_current = threading.local()  # set while a device's current() runs on this thread
+
+
 class _DeviceInput:
     """A device input terminal seen as a load on its net."""
 
@@ -125,7 +128,11 @@ class _DeviceInput:
         self.device, self.terminal = device, terminal
 
     def current(self, volts: float) -> float:
-        return self.device.current(self.terminal, volts)
+        outer, _in_current.active = getattr(_in_current, "active", False), True
+        try:
+            return self.device.current(self.terminal, volts)
+        finally:
+            _in_current.active = outer
 
 
 class _DmmInput:
@@ -359,7 +366,7 @@ class Bench:
                     self._sources[full] = (device, terminal)
                 else:
                     self._device_inputs[full] = _DeviceInput(device, terminal)
-            device.attach(lambda terminal, device_name=name: self._net_voltage(f"{device_name}.{terminal}"))
+            device.attach(lambda terminal, device_name=name: self._device_input_voltage(f"{device_name}.{terminal}"))
 
     def _terminal(self, text: str, line: str) -> str:
         where = f"wiring line {line!r}"
@@ -443,6 +450,11 @@ class Bench:
         loads = [load for node, load in self._loads.items() if nets.find(node) == net]
         loads += [load for name, load in self._device_inputs.items() if nets.find(name) == net]
         return loads
+
+    def _device_input_voltage(self, terminal: str) -> float:
+        if getattr(_in_current, "active", False):  # would recurse: the voltage depends on that current
+            raise RuntimeError("input_voltage() inside current(): current() gets the voltage as its argument")
+        return self._net_voltage(terminal)
 
     def _net_voltage(self, terminal: str) -> float:
         """Voltage of the net ``terminal`` is on: from the supply or device output driving it, else 0."""

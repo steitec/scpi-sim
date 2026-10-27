@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.3.1 - 2026-10-27
+
+### Fixed
+
+- A device whose `current()` calls `input_voltage()` now gets a clear
+  `RuntimeError` (`-300` on the instrument) instead of a `RecursionError`.
+- Console: output for a client that doesn't read is dropped once 256 KiB are
+  queued for it, instead of piling up in memory without limit.
+
+### Changed
+
+- CI and release workflows use the current major versions of the GitHub
+  Actions (Node.js 24).
+
 ## 0.3.0 - 2026-10-26
 
 ### Added

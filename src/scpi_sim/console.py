@@ -2,7 +2,8 @@
 
 Everything the device writes to its ``console`` goes to every connected client;
 every line a client types goes to ``device.console_line()``. pyserial reaches it
-as ``socket://host:port``.
+as ``socket://host:port``. A client that does not keep up loses output, like a
+serial line overrunning a terminal server's buffer; it stays connected.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ import sys
 
 from .device import Device
 from .transport import MAX_LINE, TcpServer
+
+MAX_PENDING = 256 * 1024  # bytes queued for one client before its output is dropped
 
 
 class ConsoleServer(TcpServer):
@@ -29,7 +32,7 @@ class ConsoleServer(TcpServer):
         loop = asyncio.get_running_loop()
 
         def write(text: str) -> None:
-            if not writer.is_closing():
+            if not writer.is_closing() and writer.transport.get_write_buffer_size() < MAX_PENDING:
                 writer.write(text.encode("utf-8", errors="replace"))
 
         def sink(text: str) -> None:  # called from any thread

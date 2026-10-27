@@ -155,3 +155,10 @@ def wait_for_clients(device, count=1, timeout=5.0):
     while device.console.clients < count:
         assert _time.monotonic() < end, "console client did not attach"
         _time.sleep(0.005)
+
+
+class LoopyBoard(Board):
+    """Breaks the rule: current() asks for its own input voltage."""
+
+    def current(self, terminal, volts):
+        return self.input_voltage(terminal) / 10.0

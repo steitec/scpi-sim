@@ -114,6 +114,15 @@ def test_device_bug_is_minus_300_not_a_crash():
     assert b.psu.process("*OPC?") == "1"
 
 
+def test_input_voltage_inside_current_is_a_clear_error():
+    b = board_bench(cls="helpers:LoopyBoard")
+    b.psu.process("VOLT 5;CURR 1;:OUTP ON")
+    assert b.psu.process("MEAS:CURR?") is None
+    err = b.psu.process("SYST:ERR?")
+    assert err.startswith("-300,") and "input_voltage() inside current()" in err
+    assert "RecursionError" not in err
+
+
 def test_update_failure_reported_once(capsys):
     b = board_bench(cls="helpers:BadUpdateBoard")
     for _ in range(3):

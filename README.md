@@ -309,7 +309,7 @@ wiring:
 | `voltage(terminal)` | the bench | volts driven on an output; `None` reads as 0 V (the output still counts as a driver of its net) |
 | `update()` | after every instrument message | look at `input_voltage()`, start timelines |
 | `input_voltage(terminal)` | your code | voltage of the net an input is on |
-| `console.write(text)` | your code | send text to everyone connected to the console |
+| `console.write(text)` | your code | send text to everyone connected to the console (a client that doesn't read loses output, like on a serial line) |
 | `console_line(line)` | the console port | a line someone typed |
 
 Rules that keep a bench responsive:
@@ -324,7 +324,8 @@ Rules that keep a bench responsive:
   in several steps.
 - Call `super().__init__()` in your `__init__` and write `str` to the console.
 - `current()` must not call `input_voltage()`: the input voltage is what the
-  supply computes from `current()`.
+  supply computes from `current()` (doing it anyway raises `RuntimeError`, so
+  `-300`).
 - A device output and a supply (or two outputs) on one net is an error, like
   two supplies; a relay that would connect them is refused with `-221`.
 - An exception in `current()`/`voltage()` becomes `-300` in the error queue of

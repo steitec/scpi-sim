@@ -70,6 +70,28 @@ def test_dropped_client_does_not_break_the_other():
             assert b"> ok\n" in read_until(stays, b"> ok\n")
 
 
+def test_client_that_does_not_read_loses_output_instead_of_filling_memory():
+    chunk = "x" * 65535 + "\n"
+    with console_bench() as b:
+        with open_console(b) as c:
+            wait_for_clients(b.board)
+            for _ in range(512):  # 32 MiB while the client reads nothing
+                b.board.console.write(chunk)
+            time.sleep(0.5)
+            received = 0
+            c.settimeout(0.5)
+            while True:
+                try:
+                    data = c.recv(1 << 20)
+                except TimeoutError:
+                    break
+                assert data
+                received += len(data)
+            assert received < 16 * 1024 * 1024
+            b.board.console.write("still here\n")
+            assert b"still here\n" in read_until(c, b"still here\n")
+
+
 def test_console_url_and_errors():
     with console_bench() as b:
         assert b.console_url("board") == f"socket://127.0.0.1:{b.console_port('board')}"
