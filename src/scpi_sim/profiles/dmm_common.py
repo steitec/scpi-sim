@@ -28,6 +28,7 @@ class Scpi34401Style(Multimeter):
     options: ClassVar[dict] = {"volts": real(), "amps": real(), "ohms": real(low=0), "noise": real(low=0),
                                "seed": whole(0)}
     RESOLUTION: ClassVar[float] = 3e-7  # default resolution, relative to the range
+    QUOTED_FUNCTION: ClassVar[bool] = True  # FUNC? answers "VOLT" (with quotes) or VOLT
     DEFAULT_RANGES: ClassVar[dict[str, float]]  # what RANG? DEF answers
 
     def reset(self) -> None:
@@ -128,7 +129,7 @@ class Scpi34401Style(Multimeter):
 
     @scpi("[SENSe:]FUNCtion[:ON]?")
     def function_query(self, call: Call) -> str:
-        return f'"{self._function}"'
+        return f'"{self._function}"' if self.QUOTED_FUNCTION else self._function
 
     def _set_range(self, function: str, arg: str) -> None:
         ranges = self.RANGES[function][1]
@@ -171,11 +172,11 @@ class Scpi34401Style(Multimeter):
         if self._function == function:
             self._range = self._ranges[function]
 
-    @scpi("[SENSe:]VOLTage[:DC]:RANGe")
+    @scpi("[SENSe:]VOLTage[:DC]:RANGe[:UPPer]")
     def volt_range(self, call: Call) -> None:
         self._set_range("VOLT", call.arg(0))
 
-    @scpi("[SENSe:]VOLTage[:DC]:RANGe?", max_args=1)
+    @scpi("[SENSe:]VOLTage[:DC]:RANGe[:UPPer]?", max_args=1)
     def volt_range_query(self, call: Call) -> float:
         return self._range_query("VOLT", call.optional_arg(0))
 
@@ -187,11 +188,11 @@ class Scpi34401Style(Multimeter):
     def volt_auto_query(self, call: Call) -> bool:
         return self._ranges["VOLT"] is None
 
-    @scpi("[SENSe:]CURRent[:DC]:RANGe")
+    @scpi("[SENSe:]CURRent[:DC]:RANGe[:UPPer]")
     def curr_range(self, call: Call) -> None:
         self._set_range("CURR", call.arg(0))
 
-    @scpi("[SENSe:]CURRent[:DC]:RANGe?", max_args=1)
+    @scpi("[SENSe:]CURRent[:DC]:RANGe[:UPPer]?", max_args=1)
     def curr_range_query(self, call: Call) -> float:
         return self._range_query("CURR", call.optional_arg(0))
 
@@ -203,11 +204,11 @@ class Scpi34401Style(Multimeter):
     def curr_auto_query(self, call: Call) -> bool:
         return self._ranges["CURR"] is None
 
-    @scpi("[SENSe:]RESistance:RANGe")
+    @scpi("[SENSe:]RESistance:RANGe[:UPPer]")
     def res_range(self, call: Call) -> None:
         self._set_range("RES", call.arg(0))
 
-    @scpi("[SENSe:]RESistance:RANGe?", max_args=1)
+    @scpi("[SENSe:]RESistance:RANGe[:UPPer]?", max_args=1)
     def res_range_query(self, call: Call) -> float:
         return self._range_query("RES", call.optional_arg(0))
 
