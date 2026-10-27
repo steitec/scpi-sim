@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import ClassVar
 
 from ..errors import ScpiError
 from ..instrument import Call, Instrument, scpi
@@ -25,6 +26,8 @@ class _Channel:
 class PowerSupply(Instrument):
     model = "PSU"
     serial = "SIM00002"
+    RESET_VOLTS: ClassVar[float] = DEFAULT_VOLTS  # settings after *RST (and for DEF)
+    RESET_AMPS: ClassVar[float] = DEFAULT_AMPS
 
     def __init__(self, *, channels: int | None = None, load: Load | None = None, load_ohms: float | None = None,
                  max_volts: float | None = None, max_amps: float | None = None,
@@ -58,7 +61,7 @@ class PowerSupply(Instrument):
 
     def reset(self) -> None:
         super().reset()
-        self._channels = [_Channel() for _ in range(self.channel_count)]
+        self._channels = [_Channel(self.RESET_VOLTS, self.RESET_AMPS) for _ in range(self.channel_count)]
         self._selected = 1
 
     # --- helpers --------------------------------------------------------------
@@ -130,23 +133,23 @@ class PowerSupply(Instrument):
     def volt(self, call: Call) -> None:
         number = self._number(call.suffixes[0])
         self._channels[number - 1].volts = parse_number(
-            call.arg(0), "V", minimum=0.0, maximum=self.limits[number - 1][0], default=DEFAULT_VOLTS) + 0.0  # no -0
+            call.arg(0), "V", minimum=0.0, maximum=self.limits[number - 1][0], default=self.RESET_VOLTS) + 0.0  # no -0
 
     @scpi("[SOURce#:]VOLTage[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def volt_query(self, call: Call) -> float:
         number = self._number(call.suffixes[0])
-        return self._limit_query(call, self._channels[number - 1].volts, self.limits[number - 1][0], DEFAULT_VOLTS)
+        return self._limit_query(call, self._channels[number - 1].volts, self.limits[number - 1][0], self.RESET_VOLTS)
 
     @scpi("[SOURce#:]CURRent[:LEVel][:IMMediate][:AMPLitude]")
     def curr(self, call: Call) -> None:
         number = self._number(call.suffixes[0])
         self._channels[number - 1].amps = parse_number(
-            call.arg(0), "A", minimum=0.0, maximum=self.limits[number - 1][1], default=DEFAULT_AMPS) + 0.0
+            call.arg(0), "A", minimum=0.0, maximum=self.limits[number - 1][1], default=self.RESET_AMPS) + 0.0
 
     @scpi("[SOURce#:]CURRent[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def curr_query(self, call: Call) -> float:
         number = self._number(call.suffixes[0])
-        return self._limit_query(call, self._channels[number - 1].amps, self.limits[number - 1][1], DEFAULT_AMPS)
+        return self._limit_query(call, self._channels[number - 1].amps, self.limits[number - 1][1], self.RESET_AMPS)
 
     @scpi("OUTPut#[:STATe]")
     def outp(self, call: Call) -> None:
