@@ -3,6 +3,9 @@
 Simulated SCPI lab instruments — a multimeter, a power supply and a relay
 multiplexer — that listen on a raw TCP socket like real LAN instruments on
 port 5025. Develop and test instrument automation without the hardware.
+[Profiles](#profiles) make them answer like ten common real models from
+Rohde & Schwarz, Keysight, Keithley and Siglent, so code written for those
+instruments runs unchanged.
 
 ![Demo: a simulated power supply driven from the command line](https://raw.githubusercontent.com/steitec/scpi-sim/main/docs/demo.gif)
 
@@ -171,6 +174,87 @@ circuit, which drives the output straight into the current limit).
 
 Channels are numbered 101, 102, … A list with an invalid channel is rejected
 as a whole. Options: `--channels 16` (1–99).
+
+## Profiles
+
+A profile makes a simulated instrument behave like a specific real model: the
+model's `*IDN?`, its command dialect, its limits and ranges and its answer
+formats. Test code written for the real instrument runs against the simulator
+without changes — in CI, on a laptop, without hardware.
+
+```console
+$ scpi-sim profiles
+$ scpi-sim serve --profile rs-hmp4040 --load 24 &
+scpi-sim: rs-hmp4040 (HMP4040) listening on 127.0.0.1:5025 (Ctrl+C to stop)
+$ scpi-sim query "*IDN?" "INST OUT1" "APPL 12,1" "OUTP ON" "MEAS:CURR?"
+Rohde&Schwarz,HMP4040,3629.6776.04/100001,2.70
+0.500
+```
+
+| Profile | Instrument | Kind | Dialect highlights |
+|---|---|---|---|
+| `rs-hmp4040` | Rohde & Schwarz HMP4040 | 4 × 32 V / 10 A supply | `INST OUT1`, `APPL`, `OUTP:SEL` + `OUTP:GEN`, `10.000` |
+| `rs-nge103b` | Rohde & Schwarz NGE103B | 3 × 32 V / 3 A supply | HMP dialect, `OUTP:SEL?`, `MEAS:POW?` |
+| `keysight-e36312a` | Keysight E36312A | 6 V / 5 A + 2 × 25 V / 1 A supply | channel lists: `VOLT 5,(@1)`, `MEAS:VOLT? (@1:3)`, `APPL P6V,5,1` |
+| `siglent-spd3303x` | Siglent SPD3303X | 2 × 32 V / 3.2 A + fixed 5 V | `CH1:VOLT 5`, `OUTP CH1,ON`, `SYST:STAT?` |
+| `rs-hmc8012` | Rohde & Schwarz HMC8012 | multimeter | `MEAS? 40`, `FUNC VOLT`, `RANG:UPP` |
+| `keysight-34461a` | Keysight Truevolt 34461A | multimeter | `MEAS`, `CONF`, `CONF?` with resolution, `INIT`/`FETC?` |
+| `keithley-dmm6500` | Keithley DMM6500 (SCPI) | multimeter | `:SENS:FUNC "VOLT"`, `:READ?`, `:TRAC:DATA?` |
+| `siglent-sdm3065x` | Siglent SDM3065X | multimeter | 34401A style, `CONF?` without resolution |
+| `keysight-daq970a` | Keysight DAQ970A + DAQM901A | multiplexer with built-in DMM | `MEAS:VOLT:DC? (@101,102)`, `ROUT:SCAN`, `INIT`/`FETC?` |
+| `keithley-daq6510` | Keithley DAQ6510 + 7700 | multiplexer with built-in DMM | `ROUT:CLOS (@101)` + `READ?`, `ROUT:SCAN:CRE`, `TRAC:DATA?` |
+
+In a bench file an instrument gets `profile:` instead of (or with a matching)
+`type:`. The profile fixes channels and limits; `serial:` gives one instrument
+its own serial number (useful with two of the same model). A data acquisition
+unit's built-in multimeter sits on its `common`, so wiring the channels is
+enough:
+
+```yaml
+# examples/profiles/bench.yaml
+instruments:
+  psu: {profile: rs-hmp4040, port: 5025}
+  daq: {profile: keysight-daq970a, port: 5026}
+loads:
+  rail_12v: {type: resistor, ohms: 24}
+  rail_5v: {type: resistor, ohms: 10}
+wiring:
+  - psu.ch1 -> rail_12v
+  - psu.ch2 -> rail_5v
+  - daq.101 -> rail_12v
+  - daq.102 -> rail_5v
+```
+
+```python
+# code for the real instruments, unchanged (examples/profiles/test_profiles.py)
+psu.write("INST OUT1"); psu.write("APPL 12,1"); psu.write("OUTP:SEL ON")
+psu.write("INST OUT2"); psu.write("APPL 5,1"); psu.write("OUTP:SEL ON")
+psu.write("OUTP:GEN ON")
+volts = [float(v) for v in daq.query("MEAS:VOLT:DC? (@101,102)").split(",")]
+```
+
+Options a profile accepts besides `port` and `serial`: multimeters `volts`,
+`amps`, `ohms`, `noise`, `seed`; data acquisition units `cards` (DAQ970A 1–3,
+DAQ6510 1–2), `noise`, `seed`. Fault injection works on profiles as on any
+instrument (on a DAQ, `offset` and `noise` act on its built-in multimeter).
+
+What profiles cover, and what not:
+
+- The commands typical test code uses — selecting channels, setting and
+  reading back levels, outputs, measuring, ranges, relays and scans, errors,
+  reset. Each profile's module docstring names the manual it follows and lists
+  what is left out; a command the profile does not know gives `-113`.
+- Not: AC and the other exotic functions, trigger models and sample counts,
+  list/sequence modes, protection, persona/emulation modes, Keithley TSP,
+  VXI-11/HiSLIP/USB, exact timing or accuracy.
+- The profiles follow the manufacturers' public programming manuals and are
+  **not verified on real hardware**. If you own one of these instruments and
+  something answers differently, please
+  [open an issue](https://github.com/steitec/scpi-sim/issues).
+
+scpi-sim is not affiliated with or endorsed by Rohde & Schwarz, Keysight
+Technologies, Tektronix/Keithley or Siglent; product names and trademarks
+belong to their owners.
 
 ## Bench
 
@@ -513,8 +597,8 @@ class Thermometer(Instrument):
 
 ## Roadmap
 
-- **later** — profiles that behave similar to common bench instruments,
-  VXI-11, a simple oscilloscope
+- **later** — more profiles (reports from owners of the real instruments
+  welcome), VXI-11, a simple oscilloscope
 
 ## License
 

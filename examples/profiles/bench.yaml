@@ -1,0 +1,16 @@
+# A bench of real models: an R&S HMP4040 supplies two rails, a Keysight DAQ970A
+# measures them -- test code written for these instruments runs unchanged.
+#
+#   scpi-sim serve --bench examples/profiles/bench.yaml
+#   pytest examples/profiles --scpi-bench examples/profiles/bench.yaml
+instruments:
+  psu: {profile: rs-hmp4040, port: 5025}
+  daq: {profile: keysight-daq970a, port: 5026}
+loads:
+  rail_12v: {type: resistor, ohms: 24}    # 0.5 A at 12 V
+  rail_5v: {type: resistor, ohms: 10}     # 0.5 A at 5 V
+wiring:
+  - psu.ch1 -> rail_12v
+  - psu.ch2 -> rail_5v
+  - daq.101 -> rail_12v                   # the DAQ's built-in DMM sits on its common
+  - daq.102 -> rail_5v

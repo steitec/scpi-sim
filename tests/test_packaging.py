@@ -58,7 +58,7 @@ def test_sdist_can_run_its_own_tests(tmp_path):
     with tarfile.open(sdist) as tar:
         names = {name.split("/", 1)[1] for name in tar.getnames() if "/" in name}
     for needed in ("tests/helpers.py", "tests/conftest.py", "CHANGELOG.md", "LICENSE",
-                   "examples/bench.yaml", "examples/test_example.py"):
+                   "examples/bench.yaml", "examples/test_example.py", "examples/profiles/bench.yaml"):
         assert needed in names, needed
 
 

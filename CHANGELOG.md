@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.4.0 - 2026-10-27
+
+### Added
+
+- **Profiles**: ten instruments that answer like real models — `rs-hmp4040`,
+  `rs-nge103b`, `keysight-e36312a`, `siglent-spd3303x` (power supplies),
+  `rs-hmc8012`, `keysight-34461a`, `keithley-dmm6500`, `siglent-sdm3065x`
+  (multimeters), `keysight-daq970a`, `keithley-daq6510` (multiplexers with a
+  built-in multimeter). Each follows the manufacturer's programming manual for
+  the commonly used commands; not verified on real hardware.
+- Bench files: `profile:` on an instrument, `serial:` on any instrument.
+- `scpi-sim serve --profile NAME [--port] [--load]` and `scpi-sim profiles`.
+- `scpi_sim.PROFILES` and `scpi_sim.get_profile()`.
+- Example `examples/profiles/` (an HMP4040 and a DAQ970A driven by PyVISA).
+
+### Changed
+
+- Groundwork for profiles, backward compatible (instruments without a profile
+  answer exactly as before): `Instrument` has `manufacturer`/`firmware` identity
+  fields, a `serial` argument and a `format_number()` hook; `PowerSupply` takes
+  per-channel `limits`; `Multimeter` ranges are per class (`RANGES`);
+  `Multiplexer` takes any set of `valid_channels`.
+- The error queue knows `-230` ("Data corrupt or stale").
+
 ## 0.3.1 - 2026-10-27
 
 ### Fixed
