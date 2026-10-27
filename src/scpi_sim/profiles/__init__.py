@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from ..instrument import Instrument
 from .rs_hmp import RsHmp4040
+from .rs_nge import RsNge103b
 
 PROFILES: dict[str, type[Instrument]] = {cls.profile: cls for cls in (
     RsHmp4040,
+    RsNge103b,
 )}
 
 

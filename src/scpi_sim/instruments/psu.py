@@ -28,6 +28,7 @@ class PowerSupply(Instrument):
     serial = "SIM00002"
     RESET_VOLTS: ClassVar[float] = DEFAULT_VOLTS  # settings after *RST (and for DEF)
     RESET_AMPS: ClassVar[float] = DEFAULT_AMPS
+    MIN_AMPS: ClassVar[float] = 0.0  # smallest current limit that can be set
 
     def __init__(self, *, channels: int | None = None, load: Load | None = None, load_ohms: float | None = None,
                  max_volts: float | None = None, max_amps: float | None = None,
@@ -88,13 +89,13 @@ class PowerSupply(Instrument):
         snapshot = getattr(load, "snapshot", None)  # a bench resolves its nets once, not per bisection step
         return operating_point(snapshot() if snapshot else load, channel.volts, channel.amps)
 
-    def _limit_query(self, call: Call, setting: float, maximum: float, default: float) -> float:
+    def _limit_query(self, call: Call, setting: float, maximum: float, default: float, minimum: float = 0.0) -> float:
         arg = call.optional_arg(0)
         if arg is None:
             return setting
         arg = arg.upper()
         if arg in ("MIN", "MINIMUM"):
-            return 0.0
+            return minimum
         if arg in ("MAX", "MAXIMUM"):
             return maximum
         if arg in ("DEF", "DEFAULT"):
@@ -144,12 +145,13 @@ class PowerSupply(Instrument):
     def curr(self, call: Call) -> None:
         number = self._number(call.suffixes[0])
         self._channels[number - 1].amps = parse_number(
-            call.arg(0), "A", minimum=0.0, maximum=self.limits[number - 1][1], default=self.RESET_AMPS) + 0.0
+            call.arg(0), "A", minimum=self.MIN_AMPS, maximum=self.limits[number - 1][1], default=self.RESET_AMPS) + 0.0
 
     @scpi("[SOURce#:]CURRent[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def curr_query(self, call: Call) -> float:
         number = self._number(call.suffixes[0])
-        return self._limit_query(call, self._channels[number - 1].amps, self.limits[number - 1][1], self.RESET_AMPS)
+        return self._limit_query(call, self._channels[number - 1].amps, self.limits[number - 1][1], self.RESET_AMPS,
+                                 self.MIN_AMPS)
 
     @scpi("OUTPut#[:STATe]")
     def outp(self, call: Call) -> None:

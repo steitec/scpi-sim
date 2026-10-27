@@ -79,7 +79,7 @@ class RsHmpFamily(PowerSupply):
         number = self._number()
         max_volts, max_amps = self.limits[number - 1]
         volts = parse_number(call.arg(0), "V", minimum=0.0, maximum=max_volts, default=self.RESET_VOLTS)
-        amps = parse_number(call.arg(1), "A", minimum=0.0, maximum=max_amps, default=self.RESET_AMPS)
+        amps = parse_number(call.arg(1), "A", minimum=self.MIN_AMPS, maximum=max_amps, default=self.RESET_AMPS)
         channel = self._channels[number - 1]
         channel.volts, channel.amps = volts + 0.0, amps + 0.0
 
