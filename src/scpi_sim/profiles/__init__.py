@@ -14,11 +14,13 @@ from .rs_nge import RsNge103b
 from .keysight_dmm import Keysight34461A
 from .keysight_daq import KeysightDaq970A
 from .keysight_psu import KeysightE36312A
+from .siglent_psu import SiglentSpd3303x
 
 PROFILES: dict[str, type[Instrument]] = {cls.profile: cls for cls in (
     RsHmp4040,
     RsNge103b,
     KeysightE36312A,
+    SiglentSpd3303x,
     Keysight34461A,
     KeysightDaq970A,
 )}
