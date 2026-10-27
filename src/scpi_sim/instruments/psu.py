@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..errors import ScpiError
@@ -25,9 +26,22 @@ class PowerSupply(Instrument):
     model = "PSU"
     serial = "SIM00002"
 
-    def __init__(self, *, channels: int = 1, load: Load | None = None, load_ohms: float | None = None,
-                 max_volts: float = 30.0, max_amps: float = 3.0):
-        super().__init__()
+    def __init__(self, *, channels: int | None = None, load: Load | None = None, load_ohms: float | None = None,
+                 max_volts: float | None = None, max_amps: float | None = None,
+                 limits: Sequence[tuple[float, float]] | None = None, serial: str | None = None):
+        """``limits`` gives (max volts, max amps) per channel and replaces ``channels``,
+        ``max_volts`` and ``max_amps`` (which apply the same limits to every channel)."""
+        super().__init__(serial=serial)
+        if limits is not None:
+            if channels is not None or max_volts is not None or max_amps is not None:
+                raise ValueError("give either limits or channels/max_volts/max_amps, not both")
+            limits = [(float(volts), float(amps)) for volts, amps in limits]
+            channels = len(limits)
+        else:
+            channels = 1 if channels is None else channels
+            max_volts = 30.0 if max_volts is None else max_volts
+            max_amps = 3.0 if max_amps is None else max_amps
+            limits = [(float(max_volts), float(max_amps))] * max(channels, 0)
         if channels < 1:
             raise ValueError("channels must be at least 1")
         if load is not None and load_ohms is not None:
@@ -38,8 +52,8 @@ class PowerSupply(Instrument):
             load = Resistor(load_ohms)
         self.channel_count = channels
         self.loads: list[Load | None] = [load] * channels  # what each output drives
-        self.max_volts = max_volts
-        self.max_amps = max_amps
+        self.limits: list[tuple[float, float]] = limits  # (max volts, max amps) per channel
+        self.max_volts, self.max_amps = limits[0]  # channel 1, kept for existing callers
         self.reset()
 
     def reset(self) -> None:
@@ -114,21 +128,25 @@ class PowerSupply(Instrument):
 
     @scpi("[SOURce#:]VOLTage[:LEVel][:IMMediate][:AMPLitude]")
     def volt(self, call: Call) -> None:
-        self._channel(call.suffixes[0]).volts = parse_number(
-            call.arg(0), "V", minimum=0.0, maximum=self.max_volts, default=DEFAULT_VOLTS) + 0.0  # no -0
+        number = self._number(call.suffixes[0])
+        self._channels[number - 1].volts = parse_number(
+            call.arg(0), "V", minimum=0.0, maximum=self.limits[number - 1][0], default=DEFAULT_VOLTS) + 0.0  # no -0
 
     @scpi("[SOURce#:]VOLTage[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def volt_query(self, call: Call) -> float:
-        return self._limit_query(call, self._channel(call.suffixes[0]).volts, self.max_volts, DEFAULT_VOLTS)
+        number = self._number(call.suffixes[0])
+        return self._limit_query(call, self._channels[number - 1].volts, self.limits[number - 1][0], DEFAULT_VOLTS)
 
     @scpi("[SOURce#:]CURRent[:LEVel][:IMMediate][:AMPLitude]")
     def curr(self, call: Call) -> None:
-        self._channel(call.suffixes[0]).amps = parse_number(
-            call.arg(0), "A", minimum=0.0, maximum=self.max_amps, default=DEFAULT_AMPS) + 0.0
+        number = self._number(call.suffixes[0])
+        self._channels[number - 1].amps = parse_number(
+            call.arg(0), "A", minimum=0.0, maximum=self.limits[number - 1][1], default=DEFAULT_AMPS) + 0.0
 
     @scpi("[SOURce#:]CURRent[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
     def curr_query(self, call: Call) -> float:
-        return self._limit_query(call, self._channel(call.suffixes[0]).amps, self.max_amps, DEFAULT_AMPS)
+        number = self._number(call.suffixes[0])
+        return self._limit_query(call, self._channels[number - 1].amps, self.limits[number - 1][1], DEFAULT_AMPS)
 
     @scpi("OUTPut#[:STATe]")
     def outp(self, call: Call) -> None:

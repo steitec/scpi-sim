@@ -1,3 +1,5 @@
+import pytest
+
 from scpi_sim.instruments import PowerSupply
 from scpi_sim import __version__
 
@@ -118,3 +120,25 @@ def test_load_and_load_ohms_exclusive():
     from scpi_sim.loads import Resistor
     with pytest.raises(ValueError):
         PowerSupply(load=Resistor(1), load_ohms=1)
+
+
+def test_generic_idn_unchanged():
+    assert PowerSupply().process("*IDN?") == f"scpi-sim,PSU,SIM00002,{__version__}"
+
+
+def test_psu_per_channel_limits():
+    p = PowerSupply(limits=[(6, 5), (25, 1)])
+    assert p.channel_count == 2
+    p.process("INST:NSEL 2;:VOLT 25")
+    assert p.process("SYST:ERR?").startswith("0,")
+    p.process("INST:NSEL 1;:VOLT 7")
+    assert p.process("SYST:ERR?").startswith("-222,")
+    assert p.process("CURR? MAX") == "+5.00000000E+00"
+    p.process("INST:NSEL 2")
+    assert p.process("CURR? MAX") == "+1.00000000E+00"
+
+
+@pytest.mark.parametrize("extra", [{"channels": 3}, {"max_volts": 10}, {"max_amps": 2}])
+def test_psu_limits_exclude_other_sizing(extra):
+    with pytest.raises(ValueError):
+        PowerSupply(limits=[(6, 5)], **extra)

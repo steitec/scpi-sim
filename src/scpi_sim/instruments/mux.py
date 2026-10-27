@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Collection
 from typing import Callable, ContextManager
 
 from ..instrument import Call, Instrument, scpi
@@ -13,11 +14,16 @@ class Multiplexer(Instrument):
     model = "MUX"
     serial = "SIM00003"
 
-    def __init__(self, *, channels: int = 16):
-        super().__init__()
-        if not 1 <= channels <= 99:
-            raise ValueError("channels must be between 1 and 99")
-        self.valid_channels = range(101, 101 + channels)
+    def __init__(self, *, channels: int = 16, valid_channels: Collection[int] | None = None,
+                 serial: str | None = None):
+        """``valid_channels`` (e.g. several cards: 101-120, 201-220) replaces ``channels``."""
+        super().__init__(serial=serial)
+        if valid_channels is not None:
+            self.valid_channels: Collection[int] = frozenset(valid_channels)
+        else:
+            if not 1 <= channels <= 99:
+                raise ValueError("channels must be between 1 and 99")
+            self.valid_channels = range(101, 101 + channels)
         self.closed: set[int] = set()
         # called with the would-be set of closed channels before ROUT:CLOS changes
         # anything; may raise ScpiError to refuse (used by the bench)

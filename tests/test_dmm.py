@@ -100,3 +100,14 @@ def test_source_overrides_input():
     assert d.process("MEAS:VOLT?") == "+2.50000000E+00"
     assert d.process("MEAS:RES?") == "+9.90000000E+37"
     assert d.process("MEAS:CURR?") == "+1.00000000E-01"
+
+
+class FourVolt(Multimeter):
+    RANGES = {**Multimeter.RANGES, "VOLT": ("V", (0.4, 4.0, 40.0, 400.0, 1000.0))}
+
+
+def test_dmm_ranges_per_class():
+    d = FourVolt(noise=0)
+    d.process("CONF:VOLT 3")
+    assert d.process("CONF?") == '"VOLT +4.00000000E+00"'
+    assert Multimeter(noise=0).process("CONF:VOLT 3;:CONF?") == '"VOLT +1.00000000E+01"'

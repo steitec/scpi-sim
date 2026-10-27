@@ -51,3 +51,14 @@ def test_huge_channel_range_rejected_quickly():
     m.process("ROUT:CLOS (@101:3000000)")
     assert time.monotonic() - start < 0.05
     assert m.process("SYST:ERR?").startswith("-222")
+
+
+def test_mux_valid_channel_set():
+    m = Multiplexer(valid_channels={101, 102, 201})
+    m.process("ROUT:CLOS (@201)")
+    assert m.process("SYST:ERR?").startswith("0,")
+    m.process("ROUT:CLOS (@103)")
+    assert m.process("SYST:ERR?").startswith("-222,")
+    m.process("ROUT:CLOS (@101:201)")  # expands to 101..201: 103 is not on the card
+    assert m.process("SYST:ERR?").startswith("-222,")
+    assert m.process("ROUT:CLOS:STAT?") == "(@201)"

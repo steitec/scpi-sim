@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from ..instrument import Call, Instrument, scpi
 from ..scpi.params import format_number, parse_number
 
 OVERLOAD = 9.9e37
 
-# function -> (unit suffix, available ranges)
+# function -> (unit suffix, available ranges); an instrument class may replace them (RANGES)
 _FUNCTIONS = {
     "VOLT": ("V", (0.1, 1.0, 10.0, 100.0, 1000.0)),
     "CURR": ("A", (0.01, 0.1, 1.0, 3.0, 10.0)),
@@ -31,10 +31,12 @@ class Multimeter(Instrument):
     model = "DMM"
     serial = "SIM00001"
     SPECIFIC_FAULTS = frozenset({"offset", "noise"})
+    RANGES: ClassVar[dict[str, tuple[str, tuple[float, ...]]]] = _FUNCTIONS
 
     def __init__(self, *, volts: float = 5.0, amps: float = 0.1, ohms: float = 1000.0,
-                 noise: float = 50e-6, seed: int | None = None, source: InputSource | None = None):
-        super().__init__()
+                 noise: float = 50e-6, seed: int | None = None, source: InputSource | None = None,
+                 serial: str | None = None):
+        super().__init__(serial=serial)
         self.source = source
         self.volts = volts
         self.amps = amps
@@ -49,7 +51,7 @@ class Multimeter(Instrument):
         self._range: float | None = None  # None = auto range
 
     def _configure(self, function: str, arg: str | None) -> None:
-        unit, ranges = _FUNCTIONS[function]
+        unit, ranges = self.RANGES[function]
         keyword = arg.strip().upper() if arg is not None else "AUTO"
         if keyword in ("AUTO", "DEF", "DEFAULT"):
             selected = None
@@ -70,7 +72,7 @@ class Multimeter(Instrument):
         value = float(value)
         noise = self._faults["noise"]["sigma"] if "noise" in self._faults else self.noise
         reading = value * (1 + self._random.gauss(0, noise)) if noise else value
-        limit = self._range if self._range is not None else _FUNCTIONS[self._function][1][-1]
+        limit = self._range if self._range is not None else self.RANGES[self._function][1][-1]
         if abs(reading) > 1.2 * limit:
             return math.copysign(OVERLOAD, reading)
         if "offset" in self._faults:

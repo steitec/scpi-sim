@@ -49,7 +49,7 @@ def scpi(pattern: str, max_args: int | None = None) -> Callable:
     return decorate
 
 
-def _format(value) -> str | None:
+def _format(value, number: Callable[[float], str] = format_number) -> str | None:
     if value is None:
         return None
     if isinstance(value, bool):
@@ -57,9 +57,9 @@ def _format(value) -> str | None:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
-        return format_number(value)
+        return number(value)
     if isinstance(value, (list, tuple)):
-        return ",".join(_format(v) for v in value)
+        return ",".join(_format(v, number) for v in value)
     return str(value)
 
 
@@ -76,8 +76,11 @@ def _event_bit(code: int) -> int:
 
 
 class Instrument:
+    # identity for *IDN?: "manufacturer,model,serial,firmware" (firmware None = scpi-sim's version)
+    manufacturer: ClassVar[str] = "scpi-sim"
     model: ClassVar[str] = "GENERIC"
-    serial: ClassVar[str] = "SIM00000"
+    serial: str = "SIM00000"
+    firmware: ClassVar[str | None] = None
     ERROR_QUEUE_SIZE = 20
     # faults that only make sense for some instruments
     SPECIFIC_FAULTS: ClassVar[frozenset[str]] = frozenset()
@@ -97,7 +100,9 @@ class Instrument:
                     commands.append((pattern, name, attr._scpi_max_args))
         cls._commands = commands
 
-    def __init__(self) -> None:
+    def __init__(self, *, serial: str | None = None) -> None:
+        if serial is not None:
+            self.serial = serial
         self._lock = threading.RLock()
         self._errors: list[ScpiError] = []
         self._esr = PON
@@ -109,7 +114,11 @@ class Instrument:
 
     @property
     def idn(self) -> str:
-        return f"scpi-sim,{self.model},{self.serial},{__version__}"
+        return f"{self.manufacturer},{self.model},{self.serial},{self.firmware or __version__}"
+
+    def format_number(self, value: float) -> str:
+        """How a float appears in a response (override for an instrument's own format)."""
+        return format_number(value)
 
     def reset(self) -> None:
         """Bring device settings to their *RST state (not the status system)."""
@@ -191,7 +200,7 @@ class Instrument:
             if suffixes is not None:
                 if len(args) > max_args:
                     raise ScpiError(-108)
-                return _format(getattr(self, name)(Call(args, suffixes)))
+                return _format(getattr(self, name)(Call(args, suffixes)), self.format_number)
         raise ScpiError(-113)
 
     # --- IEEE 488.2 common commands -----------------------------------------

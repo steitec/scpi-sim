@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 
 from ..errors import ScpiError
 
@@ -49,11 +50,12 @@ def parse_bool(arg: str) -> bool:
     raise ScpiError(-224)
 
 
-def parse_channel_list(arg: str, valid: range | None = None) -> list[int]:
+def parse_channel_list(arg: str, valid: Collection[int] | None = None) -> list[int]:
     """``(@101,103:105)`` -> ``[101, 103, 104, 105]``.
 
-    With ``valid``, every channel outside it gives -222 — checked on the range
-    bounds before expanding, so ``(@1:999999999)`` costs nothing.
+    With ``valid``, every channel outside it gives -222 — checked on the bounds
+    before expanding, so ``(@1:999999999)`` costs nothing; a ``valid`` that is
+    not a ``range`` (a card with gaps) is also checked channel by channel.
     """
     m = re.fullmatch(r"\(\s*@([\d\s,:]+)\)", arg.strip())
     if not m:
@@ -67,7 +69,10 @@ def parse_channel_list(arg: str, valid: range | None = None) -> list[int]:
         if valid is not None and (first not in valid or last not in valid):
             raise ScpiError(-222)
         step = 1 if last >= first else -1
-        channels.extend(range(first, last + step, step))
+        expanded = range(first, last + step, step)
+        if valid is not None and not isinstance(valid, range) and any(ch not in valid for ch in expanded):
+            raise ScpiError(-222)
+        channels.extend(expanded)
     return channels
 
 

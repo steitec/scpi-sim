@@ -122,3 +122,31 @@ def test_extra_parameters_rejected():
     for message in ["LEV 1,2", "*RST 5", "*IDN? 5", "LEV? 1"]:
         assert d.process(message) is None
         assert d.process("SYST:ERR?") == '-108,"Parameter not allowed"', message
+
+
+class Branded(Dummy):
+    manufacturer, model, firmware = "ACME", "X1", "1.2"
+
+    def __init__(self, serial=None):
+        Instrument.__init__(self, serial=serial)
+        self.level = 0.0
+
+
+def test_identity_fields_and_serial_override():
+    assert Branded(serial="42").process("*IDN?") == "ACME,X1,42,1.2"
+    assert Branded().process("*IDN?") == "ACME,X1,SIM99999,1.2"
+
+
+class ThreeDecimals(Dummy):
+    def format_number(self, value):
+        return f"{value:.3f}"
+
+    @scpi("PAIR?")
+    def pair(self, call):
+        return [1.5, 2.0]
+
+
+def test_number_format_hook():
+    d = ThreeDecimals()
+    d.process("LEV 2.5")
+    assert d.process("LEV?;PAIR?") == "2.500;1.500,2.000"
