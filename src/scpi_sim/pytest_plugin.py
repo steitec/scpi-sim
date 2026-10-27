@@ -5,6 +5,7 @@ Fixtures:
 - ``scpi_bench`` -- the bench from ``--scpi-bench FILE`` or the ini key
   ``scpi_bench`` (relative to the rootdir); without either, a generic
   ``psu`` + ``dmm`` + ``mux``. Started on free ports, stopped after the test.
+  Instruments in the bench may be profiles of real models (``profile: rs-hmp4040``).
 - ``scpi_bench_factory`` -- ``factory(path_or_dict)`` for more benches;
   relative paths are relative to the rootdir, like the ini key.
 """

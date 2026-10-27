@@ -26,7 +26,14 @@ from .instrument import Instrument
 from .instruments import Multimeter, Multiplexer, PowerSupply
 from .loads import Load, Parallel, Resistor
 from .options import real as _real, whole as _whole
+from .profiles import get_profile
 from .transport import InstrumentServer
+
+def _text(value):
+    if not isinstance(value, str) or not value:
+        raise ValueError("must be a non-empty text")
+    return value
+
 
 # type -> (class, {option: converter})
 _TYPES = {
@@ -224,19 +231,32 @@ class Bench:
                 raise BenchError(f"{where}: settings must be a mapping")
             settings = dict(settings)
             kind = settings.pop("type", None)
-            if kind not in _TYPES:
-                raise BenchError(f"{where}: unknown type {kind!r} (allowed: {', '.join(_TYPES)})")
+            profile = settings.pop("profile", None)
+            if profile is not None:
+                try:
+                    factory = get_profile(profile)
+                except (KeyError, TypeError) as error:
+                    raise BenchError(f"{where}: {error.args[0] if isinstance(error, KeyError) else error}") from None
+                if kind is not None and kind != factory.kind:
+                    raise BenchError(f"{where}: type {kind!r} does not match profile {profile!r} ({factory.kind})")
+                options = factory.options
+                for_what = f"profile {profile}"
+            elif kind not in _TYPES:
+                raise BenchError(f"{where}: unknown type {kind!r} (allowed: {', '.join(_TYPES)}; or give a 'profile')")
+            else:
+                factory, options = _TYPES[kind]
+                for_what = kind
             port = settings.pop("port", None)
             if not isinstance(port, int) or isinstance(port, bool) or not 0 <= port <= 65535:
                 raise BenchError(f"{where}: 'port' must be a number 0-65535")
             if port and port in used_ports:
                 raise BenchError(f"{where}: port {port} is already used by {used_ports[port]!r}")
             used_ports[port] = name
-            factory, options = _TYPES[kind]
+            options = {**options, "serial": _text}
             unknown = set(settings) - set(options)
             if unknown:
                 raise BenchError(f"{where}: unknown option {sorted(unknown)[0]!r} "
-                                 f"(allowed for {kind}: {', '.join(sorted(options))})")
+                                 f"(allowed for {for_what}: {', '.join(sorted(options))})")
             for option, value in settings.items():
                 try:
                     settings[option] = options[option](value)

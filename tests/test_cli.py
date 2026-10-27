@@ -226,3 +226,34 @@ def test_fault_cli_keeps_text_values(tmp_path):
         assert b.dmm.faults["offset"] == {"value": 0.5}
         assert main(["fault", "psu", "no_response", "count=2", "--control-port", port]) == 0
         assert b.psu.faults["no_response"] == {"count": 2}
+
+
+def test_profiles_command(capsys):
+    from scpi_sim.profiles import PROFILES
+    assert main(["profiles"]) == 0
+    out = capsys.readouterr().out
+    for name, cls in PROFILES.items():
+        assert re.search(rf"^{re.escape(name)}\s+{cls.kind}\s+{re.escape(cls.description)}$", out, re.M)
+
+
+def test_serve_profile():
+    p, line, port = start("--profile", "rs-hmp4040", "--load", "10")
+    try:
+        assert line.startswith("scpi-sim: rs-hmp4040 (HMP4040) listening on 127.0.0.1:")
+        _, f = connect(port)
+        assert query(f, "*IDN?").startswith("Rohde&Schwarz,HMP4040,")
+        assert query(f, "APPL 5,1;:OUTP 1;:MEAS:CURR?") == "0.500"
+    finally:
+        p.kill()
+        p.communicate()
+
+
+@pytest.mark.parametrize("args", [
+    ["serve", "--profile", "rs-hmp4040", "psu"],
+    ["serve", "--profile", "rs-hmp4040", "--bench", "b.yaml"],
+    ["serve", "--profile", "nope"],
+])
+def test_serve_profile_usage_errors(args):
+    with pytest.raises(SystemExit) as e:
+        main(args)
+    assert e.value.code == 2

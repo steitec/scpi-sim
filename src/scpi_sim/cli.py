@@ -13,6 +13,7 @@ from .bench import Bench, BenchError
 from .control import send_control
 from .instrument import Instrument
 from .instruments import Multimeter, Multiplexer, PowerSupply
+from .profiles import PROFILES, get_profile
 from .transport import InstrumentServer
 
 
@@ -32,8 +33,14 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     serve = commands.add_parser("serve", help="serve one simulated instrument, or a whole bench")
     serve.add_argument("--bench", metavar="FILE", help="serve all instruments of a bench file (YAML)")
+    serve.add_argument("--profile", metavar="NAME", help="serve one instrument that behaves like a real model "
+                                                         "(see: scpi-sim profiles)")
     serve.add_argument("--host", dest="bench_host", default="127.0.0.1",
-                       help="with --bench: address to listen on (default: 127.0.0.1)")
+                       help="with --bench or --profile: address to listen on (default: 127.0.0.1)")
+    serve.add_argument("--port", dest="profile_port", type=_port, default=5025,
+                       help="with --profile: TCP port (default: 5025, 0 = any free port)")
+    serve.add_argument("--load", dest="profile_load", type=float, metavar="OHMS",
+                       help="with --profile of a power supply: resistive load on every output")
     kinds = serve.add_subparsers(dest="kind", metavar="INSTRUMENT")
 
     def kind(name: str, help: str) -> argparse.ArgumentParser:
@@ -56,6 +63,7 @@ def _parser() -> argparse.ArgumentParser:
     mux = kind("mux", "relay multiplexer (channels 101...)")
     mux.add_argument("--channels", type=int, default=16, help="number of channels, 1-99")
 
+    commands.add_parser("profiles", help="list the instrument profiles (real models)")
     q = commands.add_parser("query", help="send SCPI messages to an instrument and print the answers")
     q.add_argument("messages", nargs="+", metavar="MESSAGE", help='e.g. "*IDN?" "VOLT 5" "MEAS:VOLT?"')
     q.add_argument("--host", default="127.0.0.1", help="instrument address (default: 127.0.0.1)")
@@ -197,25 +205,43 @@ def main(argv: list[str] | None = None) -> int:
         return _query(args)
     if args.command == "fault":
         return _fault(parser, args)
-    if bool(args.bench) == bool(args.kind):
-        parser.error("serve needs either an instrument (dmm, psu, mux) or --bench FILE")
+    if args.command == "profiles":
+        width = max(map(len, PROFILES))
+        for name, cls in PROFILES.items():
+            print(f"{name:<{width}}  {cls.kind}  {cls.description}")
+        return 0
+    if [bool(args.bench), bool(args.kind), bool(args.profile)].count(True) != 1:
+        parser.error("serve needs an instrument (dmm, psu, mux), --profile NAME or --bench FILE")
     if args.bench:
         return _serve_bench(args)
-    try:
-        instrument = _instrument(args)
-    except ValueError as error:
-        parser.error(str(error))
+    if args.profile:
+        try:
+            cls = get_profile(args.profile)
+        except KeyError as error:
+            parser.error(error.args[0])
+        if args.profile_load is not None and cls.kind != "psu":
+            parser.error(f"--load only works with a power supply profile, {args.profile} is a {cls.kind}")
+        try:
+            instrument = cls(load_ohms=args.profile_load) if args.profile_load is not None else cls()
+        except ValueError as error:
+            parser.error(str(error))
+        host, port, label = args.bench_host, args.profile_port, f"{args.profile} ({instrument.model})"
+    else:
+        try:
+            instrument = _instrument(args)
+        except ValueError as error:
+            parser.error(str(error))
+        host, port, label = args.host, args.port, instrument.model
 
-    server = InstrumentServer(instrument, host=args.host, port=args.port)
+    server = InstrumentServer(instrument, host=host, port=port)
     try:
         server.start()
     except OSError as error:
-        print(f"scpi-sim: error: cannot listen on {args.host}:{args.port}: {error.strerror or error}",
-              file=sys.stderr)
+        print(f"scpi-sim: error: cannot listen on {host}:{port}: {error.strerror or error}", file=sys.stderr)
         return 1
 
     stop = _stop_event()
-    print(f"scpi-sim: {instrument.model} listening on {args.host}:{server.port} (Ctrl+C to stop)", flush=True)
+    print(f"scpi-sim: {label} listening on {host}:{server.port} (Ctrl+C to stop)", flush=True)
     _wait(stop)
     server.stop()
     print("scpi-sim: stopped", flush=True)
