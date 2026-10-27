@@ -63,3 +63,9 @@ def test_serial_on_generic_instrument():
     data = hmp_bench()
     data["instruments"]["dmm"]["serial"] = "MY123"
     assert Bench.from_dict(data).dmm.process("*IDN?").split(",")[2] == "MY123"
+
+
+@pytest.mark.parametrize("value", [["rs-hmp4040"], 4040, {"name": "rs-hmp4040"}])
+def test_profile_must_be_text(value):  # review: was "unhashable type"
+    with pytest.raises(BenchError, match="instrument 'psu': 'profile' must be text"):
+        Bench.from_dict(hmp_bench(profile=value))

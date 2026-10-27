@@ -28,21 +28,30 @@ class Scpi34401Style(Multimeter):
     options: ClassVar[dict] = {"volts": real(), "amps": real(), "ohms": real(low=0), "noise": real(low=0),
                                "seed": whole(0)}
     RESOLUTION: ClassVar[float] = 3e-7  # default resolution, relative to the range
+    # best (MIN) and worst (MAX) resolution, relative to the range; None: as the default
+    RESOLUTION_MIN: ClassVar[float | None] = None
+    RESOLUTION_MAX: ClassVar[float | None] = None
     QUOTED_FUNCTION: ClassVar[bool] = True  # FUNC? answers "VOLT" (with quotes) or VOLT
     DEFAULT_RANGES: ClassVar[dict[str, float]]  # what RANG? DEF answers
 
     def reset(self) -> None:
         super().reset()
         self._ranges: dict[str, float | None] = dict.fromkeys(self.RANGES)  # None = autorange
-        self._resolutions: dict[str, float | None] = dict.fromkeys(self.RANGES)
+        self._resolutions: dict[str, float | None] = dict.fromkeys(self.RANGES)  # None: relative
+        self._relative: dict[str, float] = dict.fromkeys(self.RANGES, self.RESOLUTION)
         self._readings: list[float] | None = None
 
     def _configure(self, function: str, arg: str | None, resolution: str | None = None) -> None:
         super()._configure(function, arg)
         self._ranges[function] = self._range
         self._resolutions[function] = None
-        if resolution is not None and resolution.strip().upper() not in ("DEF", "DEFAULT", "MIN", "MAX",
-                                                                          "MINIMUM", "MAXIMUM"):
+        self._relative[function] = self.RESOLUTION
+        keyword = (resolution or "").strip().upper()
+        if keyword in ("MIN", "MINIMUM"):
+            self._relative[function] = self.RESOLUTION_MIN or self.RESOLUTION
+        elif keyword in ("MAX", "MAXIMUM"):
+            self._relative[function] = self.RESOLUTION_MAX or self.RESOLUTION
+        elif keyword not in ("", "DEF", "DEFAULT"):
             self._resolutions[function] = parse_number(resolution, self.RANGES[function][0], minimum=0.0,
                                                        maximum=self.RANGES[function][1][-1], default=0.0)
         self._readings = None
@@ -98,7 +107,7 @@ class Scpi34401Style(Multimeter):
         rng = self._active_range(function)
         resolution = self._resolutions[function]
         if resolution is None:
-            resolution = self.RESOLUTION * rng
+            resolution = self._relative[function] * rng
         return f'"{function} {self.format_number(rng)},{self.format_number(resolution)}"'
 
     # --- triggering -----------------------------------------------------------------

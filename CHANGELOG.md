@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.4.1 - unreleased
+
+### Fixed
+
+- `keysight-daq970a`: `ROUT:OPEN` on a card that has channels in the scan list
+  is refused with -221, like `ROUT:CLOS` (the manual refuses manual switching
+  there).
+- `keysight-daq970a`: `MEAS:VOLT:DC? (@)` and `MEAS:RES? (@)` with an empty
+  channel list give -221 instead of an empty answer; the scan list stays as it
+  was.
+- `keysight-daq970a`, `keithley-daq6510`: injecting or clearing a fault waits
+  for a running command, so a fault never changes in the middle of a scan.
+- `siglent-spd3303x`: the IEEE 488.2 common commands its manual does not list
+  (`*RST`, `*CLS`, `*ESR?`, `*ESE`, `*SRE`, `*STB?`, `*OPC`, `*OPC?`, `*WAI`,
+  `*TST?`) give -113, like other commands the instrument does not have.
+- `keysight-34461a`: resolution `MIN`/`MAX` in `CONF`/`MEAS` select the best
+  (0.3 ppm of range) and worst (100 ppm) resolution from the manual's
+  Resolution Table instead of the default.
+- Bench files: a `profile:` that is not text (a list, a number) gives
+  "'profile' must be text" instead of a Python error message.
+
 ## 0.4.0 - 2026-10-27
 
 ### Added

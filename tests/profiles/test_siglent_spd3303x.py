@@ -1,5 +1,7 @@
 """siglent-spd3303x, after the Siglent SPD3303X Quick Start QS0503X-E01B, chapter 3 (remote control)."""
 
+import pytest
+
 from scpi_sim.bench import Bench
 from scpi_sim.profiles import get_profile
 
@@ -97,3 +99,11 @@ def test_generic_commands_not_in_the_manual():
     for command in ("OUTP:MODE?", "INST:NSEL 3", "INST:NSEL?", "OUTP?", "OUTP2?"):
         assert psu.process(command) is None
     assert psu.process("SYST:ERR?").startswith("-113,")
+
+
+@pytest.mark.parametrize("command", ["*RST", "*CLS", "*ESR?", "*ESE 1", "*ESE?", "*SRE 1", "*SRE?",
+                                     "*STB?", "*OPC", "*OPC?", "*WAI", "*TST?"])
+def test_common_commands_not_in_the_manual(command):  # the manual lists only *IDN?, *SAV, *RCL
+    psu = SPD()
+    assert psu.process(command) is None
+    assert errors(psu) == ["-113"]

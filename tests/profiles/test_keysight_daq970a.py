@@ -1,5 +1,7 @@
 """keysight-daq970a, after the Keysight DAQ970A/DAQ973A Programming Guide DAQ97-90002, Edition 3."""
 
+import threading
+
 import pytest
 
 from scpi_sim.bench import Bench, BenchError
@@ -152,3 +154,32 @@ def test_generic_commands_not_in_the_manual(command):
     daq = DAQ()
     daq.process(command)
     assert errors(daq) == ["-113"]
+
+
+def test_manual_open_refused_on_a_card_in_the_scan_list():  # review: like ROUT:CLOS
+    daq = DAQ(cards=2)
+    daq.process("ROUT:SCAN (@101,102)")
+    daq.process("ROUT:OPEN (@103)")
+    assert errors(daq) == ["-221"]
+    daq.process("ROUT:OPEN (@201)")  # a card without scan channels
+    assert errors(daq) == []
+
+
+def test_measure_with_empty_channel_list_is_an_error():  # review: was an empty answer
+    daq = DAQ()
+    daq.process("ROUT:SCAN (@101)")
+    assert daq.process("MEAS:VOLT:DC? (@)") is None
+    assert errors(daq) == ["-221"]
+    assert daq.process("ROUT:SCAN?") == "#16(@101)"  # scan list unchanged
+
+
+@pytest.mark.parametrize("action", [lambda daq: daq.inject("offset", value=0.1), lambda daq: daq.clear_faults()])
+def test_fault_changes_wait_for_a_running_command(action):  # review: inject took only the DMM lock
+    daq = DAQ()
+    done = threading.Event()
+    thread = threading.Thread(target=lambda: (action(daq), done.set()))
+    with daq._lock:  # held while a command (a sweep) runs
+        thread.start()
+        assert not done.wait(0.2)
+    assert done.wait(2)
+    thread.join()

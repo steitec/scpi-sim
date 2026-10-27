@@ -244,10 +244,12 @@ class Bench:
             kind = settings.pop("type", None)
             profile = settings.pop("profile", None)
             if profile is not None:
+                if not isinstance(profile, str):
+                    raise BenchError(f"{where}: 'profile' must be text")
                 try:
                     factory = get_profile(profile)
-                except (KeyError, TypeError) as error:
-                    raise BenchError(f"{where}: {error.args[0] if isinstance(error, KeyError) else error}") from None
+                except KeyError as error:
+                    raise BenchError(f"{where}: {error.args[0]}") from None
                 if kind is not None and kind != factory.kind:
                     raise BenchError(f"{where}: type {kind!r} does not match profile {profile!r} ({factory.kind})")
                 options = factory.options

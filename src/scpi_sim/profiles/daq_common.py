@@ -62,15 +62,20 @@ class DaqMultiplexer(Multiplexer):
 
     # --- faults go to the built-in multimeter --------------------------------------
 
+    # Both take this instrument's lock first, like a command does, so a fault never
+    # changes in the middle of a sweep.
+
     def inject(self, kind: str, **params) -> None:
-        if kind in self.SPECIFIC_FAULTS:
-            self.dmm.inject(kind, **params)
-        else:
-            super().inject(kind, **params)
+        with self._lock:
+            if kind in self.SPECIFIC_FAULTS:
+                self.dmm.inject(kind, **params)
+            else:
+                super().inject(kind, **params)
 
     def clear_faults(self) -> None:
-        super().clear_faults()
-        self.dmm.clear_faults()
+        with self._lock:
+            super().clear_faults()
+            self.dmm.clear_faults()
 
     @property
     def faults(self) -> dict[str, dict]:
@@ -93,8 +98,10 @@ class DaqMultiplexer(Multiplexer):
             return params, []
         return params, sorted(set(parse_channel_list(match.group(), valid=self.valid_channels)))
 
-    def _configure(self, function: str, call: Call) -> list[int]:
+    def _configure(self, function: str, call: Call, *, measure: bool = False) -> list[int]:
         params, channels = self._split(call)
+        if measure and not channels:
+            raise ScpiError(-221, "Settings conflict;empty scan list")
         if len(params) > 2:
             raise ScpiError(-108)
         range_arg = params[0] if params else None
@@ -138,6 +145,11 @@ class DaqMultiplexer(Multiplexer):
         """ROUT:CLOS, refused on cards that belong to the scan list."""
         self._check_manual_switching(self._channels(call))
         Multiplexer.close(self, call)
+
+    def _open_manual(self, call: Call) -> None:
+        """ROUT:OPEN, refused on cards that belong to the scan list."""
+        self._check_manual_switching(self._channels(call))
+        Multiplexer.open(self, call)
 
     def _scan_list_block(self) -> str:
         text = "(@" + ",".join(str(ch) for ch in self._scan) + ")"

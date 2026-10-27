@@ -7,8 +7,9 @@ Simulated (see ``daq_common`` for the sweep model): ``MEAS:VOLT:DC?`` and
 ``MEAS:RES?`` with a channel list, ``CONF:VOLT:DC``/``CONF:RES`` (redefine the scan
 list, like the instrument), ``ROUT:SCAN``/``ROUT:SCAN?`` (definite-length block,
 ``#13(@)`` when empty), ``INIT``, ``FETC?``, ``READ?``, ``ROUT:CLOS``/``OPEN`` and their
-queries. Manual switching on a card that has channels in the scan list is
-refused (-221), as the manual describes. Cards: DAQM901A in slots 1-3 (option
+queries. Manual switching (``ROUT:CLOS``/``OPEN``) on a card that has channels in
+the scan list is refused (-221), as the manual describes; so is ``MEAS?`` with an
+empty channel list ``(@)``. Cards: DAQM901A in slots 1-3 (option
 ``cards``), channels s01-s20; DC volts 100 mV-300 V, 2-wire resistance
 100 ohm-100 Mohm; readings in the instrument's ``+5.00000000E+00`` format.
 
@@ -44,11 +45,11 @@ class KeysightDaq970A(DaqMultiplexer):
 
     @scpi("MEASure[:VOLTage][:DC]?", max_args=3)
     def meas_volt(self, call: Call) -> list[float]:
-        return self._sweep(self._configure("VOLT", call))
+        return self._sweep(self._configure("VOLT", call, measure=True))
 
     @scpi("MEASure:RESistance?", max_args=3)
     def meas_res(self, call: Call) -> list[float]:
-        return self._sweep(self._configure("RES", call))
+        return self._sweep(self._configure("RES", call, measure=True))
 
     @scpi("CONFigure[:VOLTage][:DC]", max_args=3)
     def conf_volt(self, call: Call) -> None:
@@ -82,5 +83,9 @@ class KeysightDaq970A(DaqMultiplexer):
     @scpi("ROUTe:CLOSe")
     def close(self, call: Call) -> None:
         self._close_manual(call)
+
+    @scpi("ROUTe:OPEN")
+    def open(self, call: Call) -> None:
+        self._open_manual(call)
 
     close_state = open_all = None  # generic commands the manual does not have: -113

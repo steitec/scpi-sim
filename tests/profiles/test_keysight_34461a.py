@@ -90,3 +90,17 @@ def test_on_a_bench():
     })
     b.psu.process("VOLT 3.3;CURR 1;:OUTP ON")
     assert b.dmm.process("MEAS:VOLT:DC?") == "+3.30000000E+00"
+
+
+@pytest.mark.parametrize("resolution, expected", [
+    ("MIN", "+3.00000000E-06"),  # best: 0.3 ppm of range (100 PLC), Resolution Table
+    ("MAX", "+1.00000000E-03"),  # worst: 100 ppm of range (0.02 PLC)
+    ("DEF", "+3.00000000E-06"),
+])
+def test_conf_resolution_min_max(resolution, expected):  # review: MIN/MAX were treated as DEF
+    dmm = DMM(volts=5.0, noise=0)
+    dmm.process(f"CONF:VOLT:DC 10,{resolution}")
+    assert dmm.process("CONF?") == f'"VOLT +1.00000000E+01,{expected}"'
+    dmm.process(f"MEAS:CURR:DC? 1,{resolution.lower()}imum" if resolution != "DEF" else "MEAS:CURR:DC? 1,DEF")
+    factor = {"MIN": 3e-7, "MAX": 1e-4, "DEF": 3e-7}[resolution]
+    assert dmm.process("CONF?") == f'"CURR +1.00000000E+00,{dmm.format_number(factor)}"'

@@ -13,7 +13,9 @@ manual's typical return. CH1/CH2: 0-32 V, 0-3.2 A. CH3 is the fixed output (2.5,
 3.2 A limit, only switched on and off.
 
 Not simulated: tracking (series/parallel), timer, waveform display, ``*SAV``/
-``*RCL``, network setup commands. ``SYSTem:ERRor?`` answers ``0 No Error`` for an
+``*RCL``, network setup commands. The IEEE 488.2 common commands the manual does not
+list (``*RST``, ``*CLS``, ``*OPC?``, ``*STB?`` ...) give -113, as other generic
+commands do. ``SYSTem:ERRor?`` answers ``0 No Error`` for an
 empty queue, as in the manual (the exact spacing is not recoverable from it);
 errors keep the standard SCPI form (``-222,"Data out of range"``) because the
 manual does not document Siglent's codes. Serial number and versions are plausible values.
@@ -145,3 +147,6 @@ class SiglentSpd3303x(PowerSupply):
 
     # generic commands the manual does not have: -113
     outp_mode = inst_nsel = inst_nsel_query = outp_query = None
+    # common commands: the manual lists only *IDN?, *SAV and *RCL
+    _rst = _cls = _esr_query = _ese_set = _ese_query = _sre_set = _sre_query = None
+    _stb = _opc = _opc_query = _wai = _tst = None
