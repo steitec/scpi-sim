@@ -34,6 +34,10 @@ class RsNge103b(RsHmpFamily):
     def inst_select_query(self, call: Call) -> str:
         return f"OUTPut{self._selected}"
 
+    @scpi("OUTPut:MODE?")
+    def outp_mode(self, call: Call) -> str:
+        return self.output(self._number())[2]
+
     @scpi("OUTPut:SELect?")
     def outp_select_query(self, call: Call) -> bool:
         return self._active[self._number() - 1]

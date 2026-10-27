@@ -13,9 +13,10 @@ manual's typical return. CH1/CH2: 0-32 V, 0-3.2 A. CH3 is the fixed output (2.5,
 3.2 A limit, only switched on and off.
 
 Not simulated: tracking (series/parallel), timer, waveform display, ``*SAV``/
-``*RCL``, network setup commands. ``SYSTem:ERRor?`` keeps the standard SCPI
-format (``-222,"Data out of range"``): the manual only shows ``0 No Error`` and
-does not document the codes. Serial number and versions are plausible values.
+``*RCL``, network setup commands. ``SYSTem:ERRor?`` answers ``0 No Error`` for an
+empty queue, as in the manual (the exact spacing is not recoverable from it);
+errors keep the standard SCPI form (``-222,"Data out of range"``) because the
+manual does not document Siglent's codes. Serial number and versions are plausible values.
 """
 
 from __future__ import annotations
@@ -137,3 +138,10 @@ class SiglentSpd3303x(PowerSupply):
     @scpi("SYSTem:VERSion?")
     def _syst_version(self, call: Call) -> str:
         return self.firmware
+
+    @scpi("SYSTem:ERRor[:NEXT]?")
+    def _syst_err(self, call: Call) -> str:
+        return str(self._errors.pop(0)) if self._errors else "0 No Error"
+
+    # generic commands the manual does not have: -113
+    outp_mode = inst_nsel = inst_nsel_query = outp_query = None

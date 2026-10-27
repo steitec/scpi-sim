@@ -93,6 +93,8 @@ class KeysightE36312A(PowerSupply):
             values.append(self._limit_query(call_n, setting, self.limits[n - 1][index], defaults[n - 1], minimum))
         return values
 
+    outp_mode = None  # OUTPut:MODE? is not in the manual: -113
+
     # --- selection ------------------------------------------------------------------
 
     @scpi("INSTrument[:SELect]")

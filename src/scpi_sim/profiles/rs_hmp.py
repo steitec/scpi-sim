@@ -73,6 +73,25 @@ class RsHmpFamily(PowerSupply):
         return f"OUT{self._selected}"
 
     # --- settings ---------------------------------------------------------------
+    # [SOURce:] without a channel suffix: the manual addresses the selected channel only
+
+    @scpi("[SOURce:]VOLTage[:LEVel][:IMMediate][:AMPLitude]")
+    def volt(self, call: Call) -> None:
+        super().volt(Call(call.args, (None,)))
+
+    @scpi("[SOURce:]VOLTage[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
+    def volt_query(self, call: Call) -> float:
+        return super().volt_query(Call(call.args, (None,)))
+
+    @scpi("[SOURce:]CURRent[:LEVel][:IMMediate][:AMPLitude]")
+    def curr(self, call: Call) -> None:
+        super().curr(Call(call.args, (None,)))
+
+    @scpi("[SOURce:]CURRent[:LEVel][:IMMediate][:AMPLitude]?", max_args=1)
+    def curr_query(self, call: Call) -> float:
+        return super().curr_query(Call(call.args, (None,)))
+
+    outp_mode = None  # OUTPut:MODE? is not in the HMP manual: -113
 
     @scpi("APPLy", max_args=2)
     def apply(self, call: Call) -> None:

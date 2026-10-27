@@ -1,8 +1,9 @@
-"""Data acquisition units: a relay multiplexer with a built-in multimeter on its common.
+"""Data acquisition units: relay multiplexer cards with a built-in multimeter.
 
-The built-in multimeter's input is the card's ``common`` terminal; on a bench it
-is wired there automatically, so ``daq.101 -> board.3V3`` is all the wiring a
-measurement needs. Measuring a channel list sweeps it in ascending order: every
+Each card (slot) has its own common: ``daq.common1``, ``daq.common2``, ...
+(``daq.common`` is ``daq.common1``). The built-in multimeter measures the common
+of the card whose channel it reads; on a bench that is wired automatically, so
+``daq.101 -> board.3V3`` is all the wiring a measurement needs. Measuring a channel list sweeps it in ascending order: every
 channel of the cards involved is opened, then each channel is closed, read and
 opened again -- so a measurement sees one channel only, and the bench's relay
 rules (two sources on one net) apply to every step.
@@ -40,6 +41,7 @@ class DaqMultiplexer(Multiplexer):
         self.cards = cards
         self.dmm = Multimeter(noise=noise, seed=seed)
         self.dmm.RANGES = self.DMM_RANGES
+        self.active_slot = 1  # the card the built-in multimeter is reading
         channels = {slot * 100 + n for slot in range(1, cards + 1) for n in range(1, self.CHANNELS_PER_CARD + 1)}
         super().__init__(valid_channels=channels, serial=serial)
         self.reset()
@@ -50,6 +52,13 @@ class DaqMultiplexer(Multiplexer):
         self._config: dict[int, tuple[str, str | None]] = {}  # channel -> (function, range argument)
         self._scan: list[int] = []
         self._readings: list[float] | None = None
+
+    def common_pin(self, channel: int) -> str:
+        return f"common{channel // 100}"
+
+    @property
+    def common_pins(self) -> tuple[str, ...]:
+        return ("common", *(f"common{slot}" for slot in range(1, self.cards + 1)))
 
     # --- faults go to the built-in multimeter --------------------------------------
 
@@ -108,6 +117,7 @@ class DaqMultiplexer(Multiplexer):
                     if self.before_close is not None:
                         self.before_close(closed)
                     self.closed = closed
+                    self.active_slot = channel // 100
                     function, range_arg = self._config.get(channel, ("VOLT", None))
                     self.dmm._configure(function, range_arg)
                     readings.append(self.dmm._read())

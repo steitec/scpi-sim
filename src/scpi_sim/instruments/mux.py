@@ -37,6 +37,14 @@ class Multiplexer(Instrument):
         super().reset()
         self.closed = set()
 
+    def common_pin(self, channel: int) -> str:
+        """The terminal a closed ``channel`` connects to (one common for the whole card)."""
+        return "common"
+
+    @property
+    def common_pins(self) -> tuple[str, ...]:
+        return ("common",)
+
     def _channels(self, call: Call) -> list[int]:
         return parse_channel_list(call.arg(0), valid=self.valid_channels)
 

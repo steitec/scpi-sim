@@ -37,7 +37,7 @@ def _parser() -> argparse.ArgumentParser:
                                                          "(see: scpi-sim profiles)")
     serve.add_argument("--host", dest="bench_host", default="127.0.0.1",
                        help="with --bench or --profile: address to listen on (default: 127.0.0.1)")
-    serve.add_argument("--port", dest="profile_port", type=_port, default=5025,
+    serve.add_argument("--port", dest="profile_port", type=_port,
                        help="with --profile: TCP port (default: 5025, 0 = any free port)")
     serve.add_argument("--load", dest="profile_load", type=float, metavar="OHMS",
                        help="with --profile of a power supply: resistive load on every output")
@@ -212,6 +212,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if [bool(args.bench), bool(args.kind), bool(args.profile)].count(True) != 1:
         parser.error("serve needs an instrument (dmm, psu, mux), --profile NAME or --bench FILE")
+    if not args.profile and (args.profile_port is not None or args.profile_load is not None):
+        parser.error("--port and --load before the instrument only work with --profile "
+                     "(for an instrument, put them after it: serve psu --port 5025)")
     if args.bench:
         return _serve_bench(args)
     if args.profile:
@@ -225,7 +228,8 @@ def main(argv: list[str] | None = None) -> int:
             instrument = cls(load_ohms=args.profile_load) if args.profile_load is not None else cls()
         except ValueError as error:
             parser.error(str(error))
-        host, port, label = args.bench_host, args.profile_port, f"{args.profile} ({instrument.model})"
+        port = 5025 if args.profile_port is None else args.profile_port
+        host, label = args.bench_host, f"{args.profile} ({instrument.model})"
     else:
         try:
             instrument = _instrument(args)

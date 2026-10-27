@@ -24,7 +24,7 @@ def test_measure_with_range_and_overload():
 
 
 @pytest.mark.parametrize("function, low, high", [
-    ("VOLT", "4.00000000E-01", "7.50000000E+02"),
+    ("VOLT", "4.00000000E-01", "1.00000000E+03"),
     ("CURR", "2.00000000E-02", "1.00000000E+01"),
     ("RES", "4.00000000E+02", "2.50000000E+08"),
 ])

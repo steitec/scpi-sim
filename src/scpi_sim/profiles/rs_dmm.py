@@ -3,7 +3,7 @@
 Source: R&S HMC8012 SCPI Programmer's Manual, version 01 (2016), chapter 2
 "Remote Control Command Reference".
 
-Simulated: see ``dmm_common``, with the HMC8012's ranges (DC V 400 mV-750 V,
+Simulated: see ``dmm_common``, with the HMC8012's ranges (DC V 400 mV-1000 V,
 DC I 20 mA-10 A, 2-wire resistance 400 ohm-250 Mohm; DEF selects the smallest
 range, as the manual says), ``MEAS[:VOLT][:DC]?`` with a range, ``FUNC VOLT``
 (also unquoted) and ``FUNC?`` answering ``VOLT`` without quotes, ``RANG[:UPP]``,
@@ -33,7 +33,7 @@ class RsHmc8012(Scpi34401Style):
     firmware = "01.000"
     QUOTED_FUNCTION = False
     RANGES = {
-        "VOLT": ("V", (0.4, 4.0, 40.0, 400.0, 750.0)),
+        "VOLT": ("V", (0.4, 4.0, 40.0, 400.0, 1000.0)),
         "CURR": ("A", (0.02, 0.2, 2.0, 10.0)),
         "RES": ("OHM", (400.0, 4e3, 4e4, 4e5, 4e6, 4e7, 2.5e8)),
     }

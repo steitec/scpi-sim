@@ -82,3 +82,5 @@ class KeysightDaq970A(DaqMultiplexer):
     @scpi("ROUTe:CLOSe")
     def close(self, call: Call) -> None:
         self._close_manual(call)
+
+    close_state = open_all = None  # generic commands the manual does not have: -113

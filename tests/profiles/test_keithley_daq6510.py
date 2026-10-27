@@ -93,3 +93,10 @@ def test_offset_fault_on_internal_dmm():
     b.daq.inject("offset", value=0.5)
     b.daq.process("ROUT:CLOS (@101)")
     assert b.daq.process("READ?") == "5.500000E+00"
+
+
+@pytest.mark.parametrize("command", ["ROUT:CLOS:STAT?", "ROUT:OPEN? (@101)"])
+def test_generic_commands_not_in_the_manual(command):
+    daq = DAQ()
+    daq.process(command)
+    assert errors(daq) == ["-113"]

@@ -61,12 +61,12 @@ def test_measure_reads_only_its_channel_and_opens_the_card():  # Review Focus 4
     b = powered()
     b.daq.process("ROUT:CLOS (@102)")
     assert b.daq.process("MEAS:VOLT:DC? (@101)") == "+5.00000000E+00"
-    assert b.daq.process("ROUT:CLOS:STAT?") == "(@)"
+    assert b.daq.process("ROUT:CLOS? (@101:103)") == "0,0,0"
     b.daq.process("ROUT:CLOS (@103)")  # 101 is in the scan list now: card 1 belongs to the scan
     assert errors(b.daq) == ["-221"]
     b.daq.process("ROUT:SCAN (@)")
     b.daq.process("ROUT:CLOS (@103)")
-    assert errors(b.daq) == [] and b.daq.process("ROUT:CLOS:STAT?") == "(@103)"
+    assert errors(b.daq) == [] and b.daq.process("ROUT:CLOS? (@101:103)") == "0,0,1"
 
 
 def test_channel_outside_the_model_gives_no_partial_answer():
@@ -121,3 +121,34 @@ def test_reset_clears_scan_list():
     assert b.daq.process("ROUT:SCAN?") == "#13(@)"
     assert b.daq.process("FETC?") is None
     assert errors(b.daq) == ["-230"]
+
+
+def test_each_card_has_its_own_common():  # review: a relay on card 2 must not affect card 1
+    b = Bench.from_dict({
+        "instruments": {"psu": {"type": "psu", "port": 0, "channels": 2},
+                        "daq": {"profile": "keysight-daq970a", "port": 0, "noise": 0, "cards": 2}},
+        "loads": {"a": {"type": "resistor", "ohms": 1000}, "b": {"type": "resistor", "ohms": 1000}},
+        "wiring": ["daq.101 -> a", "daq.201 -> b"],
+    })
+    b.daq.process("ROUT:CLOS (@201)")
+    assert b.daq.process("MEAS:RES? (@101)") == "+1.00000000E+03"
+    assert b.daq.process("MEAS:RES? (@201)") == "+1.00000000E+03"
+
+
+def test_supplies_on_two_cards_closed_at_once():
+    b = Bench.from_dict({
+        "instruments": {"psu": {"type": "psu", "port": 0, "channels": 2},
+                        "daq": {"profile": "keysight-daq970a", "port": 0, "noise": 0, "cards": 2}},
+        "wiring": ["psu.ch1 -> daq.101", "psu.ch2 -> daq.201", "daq.common1 -> x", "daq.common2 -> y"],
+        "loads": {"x": {"type": "resistor", "ohms": 100}, "y": {"type": "resistor", "ohms": 100}},
+    })
+    b.daq.process("ROUT:CLOS (@101)")
+    b.daq.process("ROUT:CLOS (@201)")
+    assert errors(b.daq) == []
+
+
+@pytest.mark.parametrize("command", ["ROUT:CLOS:STAT?", "ROUT:OPEN:ALL"])
+def test_generic_commands_not_in_the_manual(command):
+    daq = DAQ()
+    daq.process(command)
+    assert errors(daq) == ["-113"]

@@ -209,11 +209,15 @@ class KeithleyDaq6510(_KeithleyReadings, DaqMultiplexer):
             else:
                 self.closed = self.closed - set(self._list(call.arg(0)))
 
+    close_state = open_query = None  # generic commands the manual does not have: -113
+
     @scpi("READ?", max_args=2)
     def read(self, call: Call) -> float:
         _check_buffer(call.args)
         configured = [ch for ch in self.closed if ch in self._config]
         function, range_arg = self._config[configured[0]] if configured else (self._function, None)
+        closed = configured or sorted(self.closed)
+        self.active_slot = closed[0] // 100 if closed else 1
         self.dmm._configure(function, range_arg)
         reading = self.dmm._read()
         self._readings = [reading]

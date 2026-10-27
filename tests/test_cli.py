@@ -257,3 +257,14 @@ def test_serve_profile_usage_errors(args):
     with pytest.raises(SystemExit) as e:
         main(args)
     assert e.value.code == 2
+
+
+@pytest.mark.parametrize("args", [
+    ["serve", "--port", "6000", "psu"],
+    ["serve", "--load", "5", "psu"],
+    ["serve", "--bench", "b.yaml", "--port", "7000"],
+])
+def test_profile_options_without_profile_are_rejected(args):
+    with pytest.raises(SystemExit) as e:
+        main(args)
+    assert e.value.code == 2

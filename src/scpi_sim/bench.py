@@ -143,6 +143,17 @@ class _DmmInput:
         return 1 / sum(1 / r.ohms for r in resistors)
 
 
+class _DaqInput(_DmmInput):
+    """A data acquisition unit's built-in multimeter: on the common of the card it measures."""
+
+    def __init__(self, bench: Bench, name: str, daq: Multiplexer):
+        self.bench, self.name, self.daq = bench, name, daq
+
+    @property
+    def terminal(self) -> str:
+        return f"{self.name}.common{self.daq.active_slot}"
+
+
 class Bench:
     def __init__(self) -> None:
         self.instruments: dict[str, Instrument] = {}
@@ -279,8 +290,9 @@ class Bench:
                 instrument.before_close = lambda closed, mux=name: self._check_relays(mux, closed)
                 instrument.switch_lock = self._switch_lock
                 dmm = getattr(instrument, "dmm", None)
-                if isinstance(dmm, Multimeter):  # a data acquisition unit: its multimeter sits on the common
-                    dmm.source = _DmmInput(self, f"{name}.common")
+                if isinstance(dmm, Multimeter):  # a data acquisition unit: its multimeter sits on the commons
+                    dmm.source = _DaqInput(self, name, instrument)
+                    self._static.join(f"{name}.common", f"{name}.{instrument.common_pin(101)}")
 
     def _add_loads(self, config) -> None:
         if not isinstance(config, dict):
@@ -397,7 +409,7 @@ class Bench:
         valid = (
             (pin == "input") if isinstance(instrument, Multimeter) else
             (text in self._sources) if isinstance(instrument, PowerSupply) else
-            (pin == "common" or (pin.isdigit() and int(pin) in instrument.valid_channels))
+            (pin in instrument.common_pins or (pin.isdigit() and int(pin) in instrument.valid_channels))
         )
         if not valid:
             raise BenchError(f"{where}: unknown terminal {text!r}")
@@ -436,7 +448,7 @@ class Bench:
                 if closed_override is not None and closed_override[0] == name:
                     closed = closed_override[1]
                 for channel in tuple(closed):
-                    nets.join(f"{name}.{channel}", f"{name}.common")
+                    nets.join(f"{name}.{channel}", f"{name}.{instrument.common_pin(channel)}")
         return nets
 
     def _check_sources(self, nets: _Nets, error) -> None:

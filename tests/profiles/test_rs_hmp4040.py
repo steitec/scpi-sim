@@ -120,3 +120,16 @@ def test_idn_fault():
 def test_sizing_is_fixed(option):
     with pytest.raises(TypeError):
         HMP4040(**{option: 1})
+
+
+@pytest.mark.parametrize("command", ["OUTP:MODE?", "OUTP1:MODE?", "SOUR2:VOLT 3", "SOUR2:VOLT?", "SOUR1:CURR?"])
+def test_generic_commands_not_in_the_manual(command):
+    psu = HMP4040()
+    psu.process(command)
+    assert errors(psu) == ["-113"]
+
+
+def test_source_without_suffix_still_works():
+    psu = HMP4040()
+    psu.process("SOUR:VOLT 3;:SOUR:CURR 0.5")
+    assert psu.process("SOUR:VOLT?;:SOUR:CURR?") == "3.000;0.500"

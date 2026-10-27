@@ -8,7 +8,7 @@ SPD = get_profile("siglent-spd3303x")
 
 def errors(psu):
     found = []
-    while not (error := psu.process("SYST:ERR?")).startswith("0,"):
+    while not (error := psu.process("SYST:ERR?")).startswith("0 "):
         found.append(error.split(",")[0])
     return found
 
@@ -86,3 +86,14 @@ def test_on_a_bench():
     b.psu.process("CH2:VOLT 12;:CH2:CURR 1")
     b.psu.process("OUTP CH2,ON")
     assert b.dmm.process("MEAS:VOLT?") == "+1.20000000E+01"
+
+
+def test_empty_error_queue_answers_like_the_manual():  # "Typical Return 0 No Error"
+    assert SPD().process("SYST:ERR?") == "0 No Error"
+
+
+def test_generic_commands_not_in_the_manual():
+    psu = SPD()
+    for command in ("OUTP:MODE?", "INST:NSEL 3", "INST:NSEL?", "OUTP?", "OUTP2?"):
+        assert psu.process(command) is None
+    assert psu.process("SYST:ERR?").startswith("-113,")

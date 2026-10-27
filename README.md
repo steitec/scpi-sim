@@ -206,9 +206,10 @@ Rohde&Schwarz,HMP4040,3629.6776.04/100001,2.70
 
 In a bench file an instrument gets `profile:` instead of (or with a matching)
 `type:`. The profile fixes channels and limits; `serial:` gives one instrument
-its own serial number (useful with two of the same model). A data acquisition
-unit's built-in multimeter sits on its `common`, so wiring the channels is
-enough:
+its own serial number; without it, instruments of the same profile share the
+profile's default serial. A data acquisition unit's built-in multimeter reads
+the common of the card it measures (`daq.common1`, `daq.common2`, …; `daq.common`
+is card 1), so wiring the channels is enough:
 
 ```yaml
 # examples/profiles/bench.yaml

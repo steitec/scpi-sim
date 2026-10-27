@@ -102,3 +102,9 @@ def test_on_a_bench():
     b.psu.process("VOLT 12,(@2)")
     b.psu.process("OUTP ON,(@2)")
     assert b.dmm.process("MEAS:VOLT?") == "+1.00000000E+01"  # *RST current limit 1 A into 10 ohms
+
+
+def test_output_mode_not_in_the_manual():
+    psu = E36312A()
+    psu.process("OUTP:MODE?")
+    assert errors(psu) == ["-113"]
