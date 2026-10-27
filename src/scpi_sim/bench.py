@@ -278,6 +278,9 @@ class Bench:
             elif isinstance(instrument, Multiplexer):
                 instrument.before_close = lambda closed, mux=name: self._check_relays(mux, closed)
                 instrument.switch_lock = self._switch_lock
+                dmm = getattr(instrument, "dmm", None)
+                if isinstance(dmm, Multimeter):  # a data acquisition unit: its multimeter sits on the common
+                    dmm.source = _DmmInput(self, f"{name}.common")
 
     def _add_loads(self, config) -> None:
         if not isinstance(config, dict):

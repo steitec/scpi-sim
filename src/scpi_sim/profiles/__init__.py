@@ -12,11 +12,13 @@ from ..instrument import Instrument
 from .rs_hmp import RsHmp4040
 from .rs_nge import RsNge103b
 from .keysight_dmm import Keysight34461A
+from .keysight_daq import KeysightDaq970A
 
 PROFILES: dict[str, type[Instrument]] = {cls.profile: cls for cls in (
     RsHmp4040,
     RsNge103b,
     Keysight34461A,
+    KeysightDaq970A,
 )}
 
 
