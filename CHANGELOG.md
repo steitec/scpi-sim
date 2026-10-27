@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 0.4.1 - unreleased
+## 0.4.1 - 2026-10-27
 
 ### Fixed
 
@@ -22,6 +22,10 @@ All notable changes to this project are documented here. The format follows
 - `keysight-34461a`: resolution `MIN`/`MAX` in `CONF`/`MEAS` select the best
   (0.3 ppm of range) and worst (100 ppm) resolution from the manual's
   Resolution Table instead of the default.
+- `keysight-34461a`: the default resolution is 1 ppm of the range, the
+  34461A default in the manual's Resolution Table, instead of the 0.3 ppm from
+  the generic `CONF?` example; `CONF?` after `CONF:VOLT:DC 10` now answers
+  `"VOLT +1.00000000E+01,+1.00000000E-05"`.
 - Bench files: a `profile:` that is not text (a list, a number) gives
   "'profile' must be text" instead of a Python error message.
 

@@ -23,14 +23,14 @@ def test_measure_and_overload():
     assert dmm.process("MEAS:VOLT:DC? 10,0.001") == "+5.00000000E+00"
 
 
-def test_conf_query_has_range_and_resolution():  # Typical Return "VOLT +1.00000000E+01,+3.00000000E-06"
+def test_conf_query_has_range_and_resolution():  # default: 1 ppm of range, Resolution Table (34461A, 1 PLC)
     dmm = DMM(volts=5.0, noise=0)
     dmm.process("CONF:VOLT:DC 10")
-    assert dmm.process("CONF?") == '"VOLT +1.00000000E+01,+3.00000000E-06"'
+    assert dmm.process("CONF?") == '"VOLT +1.00000000E+01,+1.00000000E-05"'
     dmm.process("CONF:VOLT:DC 10,0.001")
     assert dmm.process("CONF?") == '"VOLT +1.00000000E+01,+1.00000000E-03"'
     dmm.process("CONF:VOLT:DC")  # autorange: the range that fits 5 V
-    assert dmm.process("CONF?") == '"VOLT +1.00000000E+01,+3.00000000E-06"'
+    assert dmm.process("CONF?") == '"VOLT +1.00000000E+01,+1.00000000E-05"'
 
 
 def test_conf_read_and_init_fetch():
@@ -69,7 +69,7 @@ def test_sense_ranges():
     assert dmm.process("FUNC?") == '"VOLT"'  # a range of another function does not switch
     dmm.process("CONF:CURR")
     dmm.process("CURR:DC:RANG 3")
-    assert dmm.process("CONF?") == '"CURR +3.00000000E+00,+9.00000000E-07"'
+    assert dmm.process("CONF?") == '"CURR +3.00000000E+00,+3.00000000E-06"'
 
 
 @pytest.mark.parametrize("function, ranges", [
@@ -95,12 +95,12 @@ def test_on_a_bench():
 @pytest.mark.parametrize("resolution, expected", [
     ("MIN", "+3.00000000E-06"),  # best: 0.3 ppm of range (100 PLC), Resolution Table
     ("MAX", "+1.00000000E-03"),  # worst: 100 ppm of range (0.02 PLC)
-    ("DEF", "+3.00000000E-06"),
+    ("DEF", "+1.00000000E-05"),  # default: 1 ppm of range (1 PLC)
 ])
 def test_conf_resolution_min_max(resolution, expected):  # review: MIN/MAX were treated as DEF
     dmm = DMM(volts=5.0, noise=0)
     dmm.process(f"CONF:VOLT:DC 10,{resolution}")
     assert dmm.process("CONF?") == f'"VOLT +1.00000000E+01,{expected}"'
     dmm.process(f"MEAS:CURR:DC? 1,{resolution.lower()}imum" if resolution != "DEF" else "MEAS:CURR:DC? 1,DEF")
-    factor = {"MIN": 3e-7, "MAX": 1e-4, "DEF": 3e-7}[resolution]
+    factor = {"MIN": 3e-7, "MAX": 1e-4, "DEF": 1e-6}[resolution]
     assert dmm.process("CONF?") == f'"CURR +1.00000000E+00,{dmm.format_number(factor)}"'
