@@ -40,3 +40,29 @@ jobs:
           scpi-sim query "*IDN?" | grep '^scpi-sim,PSU'
       - if: always()
         run: docker logs sim; docker rm -f sim
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and start the demo container
+        working-directory: .
+        run: |
+          docker build -f web/Dockerfile -t scpi-sim-web .
+          docker run -d --name web -p 8080:80 scpi-sim-web
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox
+      - run: npx playwright test
+        env:
+          CI: "1"
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-test-results
+          path: web/test-results/
+      - if: always()
+        working-directory: .
+        run: docker logs web; docker rm -f web

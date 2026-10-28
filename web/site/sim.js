@@ -9,7 +9,26 @@ async function fetchOk(path) {
   return response;
 }
 
+const LOAD_LIMIT_MS = 120_000; // generous: about 10 MB on a slow mobile connection
+
+// Pyodide reports a failed WebAssembly download as an unhandled rejection and its
+// loadPyodide() never settles; turn that (or a load that never ends) into an error.
 export async function loadSim(onStatus) {
+  let onRejection, timer;
+  const failure = new Promise((_, reject) => {
+    onRejection = (event) => reject(event.reason instanceof Error ? event.reason : new Error(String(event.reason)));
+    window.addEventListener("unhandledrejection", onRejection);
+    timer = setTimeout(() => reject(new Error("loading took too long")), LOAD_LIMIT_MS);
+  });
+  try {
+    return await Promise.race([load(onStatus), failure]);
+  } finally {
+    window.removeEventListener("unhandledrejection", onRejection);
+    clearTimeout(timer);
+  }
+}
+
+async function load(onStatus) {
   if (typeof WebAssembly !== "object") throw new Error("this browser has no WebAssembly");
 
   onStatus("loading the Python runtime…");
