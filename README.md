@@ -7,6 +7,9 @@ port 5025. Develop and test instrument automation without the hardware.
 Rohde & Schwarz, Keysight, Keithley and Siglent, so code written for those
 instruments runs unchanged.
 
+**Try it in your browser:** <https://scpi-sim.steitec.net>, a simulated power
+supply wired to a DAQ, running the real simulator in the page.
+
 ![Demo: a simulated power supply driven from the command line](https://raw.githubusercontent.com/steitec/scpi-sim/main/docs/demo.gif)
 
 ```console

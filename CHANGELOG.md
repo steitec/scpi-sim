@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.4.2 - 2026-10-28
+
+### Added
+
+- Browser demo in `web/` (live at <https://scpi-sim.steitec.net>): the
+  `examples/profiles/bench.yaml` bench (HMP4040 and DAQ970A) runs in Pyodide
+  in the page, with a SCPI terminal, a guided tour and fault buttons. The
+  package itself is unchanged; `web/` is not part of the distribution.
+
 ## 0.4.1 - 2026-10-27
 
 ### Fixed
