@@ -1,10 +1,10 @@
 // Loads Pyodide, the scpi-sim wheel and web/py/demo.py, and wraps the Demo object.
-// Everything comes from this site: ./pyodide/ and ./py/ (see web/build_site.py).
+// Everything comes from this site: ./pyodide/<version>/ and ./py/ (see web/build_site.py).
 
 const base = new URL(".", import.meta.url);
 
-async function fetchOk(path) {
-  const response = await fetch(new URL(path, base));
+async function fetchOk(path, options) {
+  const response = await fetch(new URL(path, base), options);
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
   return response;
 }
@@ -32,12 +32,15 @@ async function load(onStatus) {
   if (typeof WebAssembly !== "object") throw new Error("this browser has no WebAssembly");
 
   onStatus("loading the Python runtime…");
-  const { loadPyodide } = await import("./pyodide/pyodide.mjs");
-  const pyodide = await loadPyodide({ indexURL: new URL("pyodide/", base).href });
+  const manifest = await (await fetchOk("py/manifest.json")).json();
+  const runtime = `pyodide/${manifest.pyodide}/`;
+  // Pyodide only logs a warning when the .wasm answers 404 and then never settles
+  await fetchOk(`${runtime}pyodide.asm.wasm`, { method: "HEAD" });
+  const { loadPyodide } = await import(`./${runtime}pyodide.mjs`);
+  const pyodide = await loadPyodide({ indexURL: new URL(runtime, base).href });
 
   onStatus("loading scpi-sim…");
   await pyodide.loadPackage("pyyaml", { messageCallback: () => {} });
-  const manifest = await (await fetchOk("py/manifest.json")).json();
   await pyodide.loadPackage(new URL(`py/${manifest.wheel}`, base).href, { messageCallback: () => {} });
   for (const name of ["demo.py", "bench.yaml"]) {
     const data = new Uint8Array(await (await fetchOk(`py/${name}`)).arrayBuffer());

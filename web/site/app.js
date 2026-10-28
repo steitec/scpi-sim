@@ -129,7 +129,7 @@ function send(to, line) {
     if (result.timeout) {
       await sleep(TIMEOUT_MS);
       print(TIMEOUT_TEXT, "timeout");
-    } else if (result.response === null) {
+    } else if (result.response == null) { // Python None arrives as undefined
       print("(ok, no response)", "quiet");
     } else {
       print(result.response, "response");

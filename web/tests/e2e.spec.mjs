@@ -21,6 +21,7 @@ test("tour", async ({ page }) => {
   await expect(id(page, "terminal-output")).toContainText("0.500");
   await expect(id(page, "psu-ch1-led")).toHaveAttribute("data-on", "true");
   await expect(id(page, "psu-ch1-out-a")).toContainText("0.500");
+  expect(await lines(page)).toContain("(ok, no response)");
   await expect(id(page, "daq-display")).toContainText(/\+(11\.99|12\.00)\d* VDC/);
 
   await id(page, "chip-5").click();
@@ -122,3 +123,41 @@ for (const colorScheme of ["light", "dark"]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
   });
 }
+
+test("a .wasm 404 shows the fallback quickly", async ({ page }) => {
+  await page.route("**/*.wasm", (route) => route.fulfill({ status: 404, body: "not found" }));
+  await page.goto("/");
+  await expect(id(page, "fallback")).toBeVisible({ timeout: 15_000 });
+});
+
+test("only versioned files are cached for good", async ({ request }) => {
+  const manifest = await (await request.get("/py/manifest.json")).json();
+  const runtime = await request.get(`/pyodide/${manifest.pyodide}/pyodide.asm.wasm`);
+  expect(runtime.status()).toBe(200);
+  expect(runtime.headers()["cache-control"]).toContain("immutable");
+  for (const path of ["/", "/py/manifest.json", "/app.js", "/py/demo.py"]) {
+    expect((await request.get(path)).headers()["cache-control"]).toBe("no-cache");
+  }
+});
+
+test("robots.txt allows indexing", async ({ request }) => {
+  const robots = await request.get("/robots.txt");
+  expect(robots.status()).toBe(200);
+  expect(await robots.text()).toMatch(/User-agent: \*\s+Allow: \//);
+});
+
+test("filled buttons are readable in dark mode", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await ready(page);
+  const ratio = await page.evaluate(() => {
+    const rgb = (c) => c.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const lum = ([r, g, b]) => {
+      const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const style = getComputedStyle(document.querySelector(".prompt button"));
+    const [a, b] = [lum(rgb(style.color)), lum(rgb(style.backgroundColor))].sort((x, y) => y - x);
+    return (a + 0.05) / (b + 0.05);
+  });
+  expect(ratio).toBeGreaterThanOrEqual(4.5);
+});

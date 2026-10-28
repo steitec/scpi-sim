@@ -77,11 +77,13 @@ def build(out: Path) -> None:
     shutil.copy2(ROOT / "examples" / "profiles" / "bench.yaml", py)
     wheel = build_wheel(py)
     version = wheel.name.split("-")[1]
-    (py / "manifest.json").write_text(json.dumps({"wheel": wheel.name, "version": version}) + "\n")
+    manifest = {"wheel": wheel.name, "version": version, "pyodide": PYODIDE_VERSION}
+    (py / "manifest.json").write_text(json.dumps(manifest) + "\n")
 
+    # versioned directory: nginx caches it for good, an upgrade gets new URLs
     cache = WEB / ".cache"
-    pyodide = out / "pyodide"
-    pyodide.mkdir()
+    pyodide = out / "pyodide" / PYODIDE_VERSION
+    pyodide.mkdir(parents=True)
     with tarfile.open(fetch(*PYODIDE_CORE, cache)) as tar:
         for name in CORE_FILES:
             member = tar.getmember(f"pyodide/{name}")

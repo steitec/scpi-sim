@@ -12,7 +12,7 @@ COPY examples ./examples
 COPY web ./web
 RUN python web/build_site.py --out /dist
 
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine
 LABEL org.opencontainers.image.source=https://github.com/steitec/scpi-sim \
       org.opencontainers.image.description="scpi-sim browser demo (static site)" \
       org.opencontainers.image.licenses=MIT
