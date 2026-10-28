@@ -1,2 +1,156 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>scpi-sim</title></head><body><p>scpi-sim demo</p></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>scpi-sim – simulated SCPI instruments in your browser</title>
+  <meta name="description" content="Try scpi-sim live: a simulated power supply and DAQ that answer real SCPI commands. Develop and test instrument automation without lab hardware.">
+  <meta property="og:title" content="scpi-sim – simulated SCPI instruments in your browser">
+  <meta property="og:description" content="Switch on a simulated power supply, measure it with a DAQ, inject a fault. Real scpi-sim code, running in your browser.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://scpi-sim.steitec.net/">
+  <meta property="og:image" content="https://scpi-sim.steitec.net/img/bench.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="img/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body class="loading">
+  <header class="hero">
+    <p class="eyebrow">scpi-sim · open source</p>
+    <h1>Test your test scripts without lab hardware.</h1>
+    <p class="lead">scpi-sim simulates lab instruments that answer real SCPI commands. Below is a
+      power supply wired to a DAQ. Switch it on, measure it, break it. The real simulator
+      runs right here in your browser.</p>
+  </header>
+
+  <main>
+    <section class="bench" aria-label="Simulated test bench">
+      <div class="instruments">
+        <article class="front" id="psu" aria-label="Power supply">
+          <header class="front-head">
+            <span class="model">HMP4040 <small>(simulated)</small></span>
+            <span class="kind">power supply · 4 channels</span>
+            <span class="indicators">
+              <span class="badge fault" data-testid="fault-badge-psu" hidden></span>
+              <span class="badge err" data-testid="psu-err" hidden>ERR</span>
+              <span class="badge out" id="psu-general">OUTPUT</span>
+            </span>
+          </header>
+          <div class="channels" id="psu-channels"></div>
+          <p class="powering">powering up…</p>
+        </article>
+
+        <div class="wiring" aria-label="Wiring">
+          <span>CH1 → 24&nbsp;Ω ← DAQ 101</span>
+          <span>CH2 → 10&nbsp;Ω ← DAQ 102</span>
+        </div>
+
+        <article class="front" id="daq" aria-label="Data acquisition unit">
+          <header class="front-head">
+            <span class="model">DAQ970A <small>(simulated)</small></span>
+            <span class="kind">data acquisition · built-in DMM</span>
+            <span class="indicators">
+              <span class="badge fault" data-testid="fault-badge-daq" hidden></span>
+              <span class="badge err" data-testid="daq-err" hidden>ERR</span>
+            </span>
+          </header>
+          <div class="lcd" data-testid="daq-display">– – –</div>
+          <div class="relays" id="daq-relays" aria-label="Channels 101 to 110"></div>
+          <p class="powering">powering up…</p>
+        </article>
+      </div>
+
+      <div class="console">
+        <div class="targets" role="group" aria-label="Send to">
+          <button type="button" data-testid="target-psu" data-target="psu" aria-pressed="true">psu</button>
+          <button type="button" data-testid="target-daq" data-target="daq" aria-pressed="false">daq</button>
+          <span class="status" data-testid="status" role="status">starting…</span>
+        </div>
+        <div class="terminal" data-testid="terminal-output" aria-live="polite"></div>
+        <form class="prompt" id="prompt">
+          <label for="line" id="prompt-label">psu&gt;</label>
+          <input id="line" data-testid="terminal-input" maxlength="256" autocomplete="off"
+                 autocapitalize="off" spellcheck="false" placeholder="type a SCPI command, e.g. *IDN?" disabled>
+          <button type="submit" disabled>Send</button>
+        </form>
+
+        <p class="hint">Try these in order:</p>
+        <div class="chips" id="chips"></div>
+
+        <p class="hint">Break something:</p>
+        <div class="faults">
+          <button type="button" data-testid="fault-daq-no-response" data-fault="daq-no-response" disabled>DAQ stops answering</button>
+          <button type="button" data-testid="fault-daq-offset" data-fault="daq-offset" disabled>DAQ reads +0.5&nbsp;V off</button>
+          <button type="button" data-testid="fault-psu-error" data-fault="psu-error" disabled>PSU reports error −222</button>
+          <button type="button" data-testid="reset" class="reset" disabled>Reset bench</button>
+        </div>
+      </div>
+
+      <div class="fallback" data-testid="fallback" hidden>
+        <p><strong>The live demo could not start here.</strong> <span id="fallback-reason"></span></p>
+        <p>This is what it looks like. Everything below works the same with <code>pip install scpi-sim</code>.</p>
+        <img src="img/bench.png" alt="The demo bench: power supply channel 1 at 12 V and 0.5 A, the DAQ reading 12 V" width="1200" height="630">
+        <button type="button" data-testid="retry" id="retry">Retry</button>
+      </div>
+    </section>
+
+    <section class="explain">
+      <h2>What you just used</h2>
+      <div class="flow" aria-label="Your test script talks to scpi-sim over TCP instead of a real instrument">
+        <span class="box">your Python / PyVISA test script</span>
+        <span class="arrow">TCP :5025 →</span>
+        <span class="box sim">scpi-sim</span>
+        <span class="instead">instead of the real instrument</span>
+      </div>
+      <p>scpi-sim normally runs on your laptop or in CI and listens on raw TCP sockets like a LAN
+        instrument. Your existing scripts connect to it unchanged. It keeps state like the real thing:
+        settings, outputs, error queue, relays. A bench file wires supplies, loads and meters together, so
+        measurements follow what the script switched. Ten profiles copy the command dialects
+        of real models from Rohde &amp; Schwarz, Keysight, Keithley and Siglent.</p>
+    </section>
+
+    <section class="code">
+      <h2>The same thing from Python</h2>
+      <pre><code>pip install scpi-sim
+scpi-sim serve --bench bench.yaml     # the bench from this page</code></pre>
+      <pre><code>import pyvisa
+
+rm = pyvisa.ResourceManager("@py")
+opts = dict(read_termination="\n", write_termination="\n")
+psu = rm.open_resource("TCPIP0::127.0.0.1::5025::SOCKET", **opts)
+daq = rm.open_resource("TCPIP0::127.0.0.1::5026::SOCKET", **opts)
+
+print(psu.query("*IDN?"))
+psu.write("INST OUT1; VOLT 12; OUTP:SEL ON;:OUTP:GEN ON")
+print(psu.query("MEAS:CURR?"))              # 0.500
+print(daq.query("MEAS:VOLT:DC? (@101)"))    # +1.19994013E+01</code></pre>
+      <p>The bench file is
+        <a href="https://github.com/steitec/scpi-sim/blob/main/examples/profiles/bench.yaml">examples/profiles/bench.yaml</a>.</p>
+    </section>
+
+    <section class="more">
+      <h2>What else it does</h2>
+      <ul>
+        <li><strong>Fault injection</strong> from tests or a control port: timeouts, dropped answers, error codes, offsets, noise.</li>
+        <li><strong>pytest plugin</strong>: start a bench per test run with <code>--scpi-bench bench.yaml</code>.</li>
+        <li><strong>Docker image</strong>: <code>ghcr.io/steitec/scpi-sim</code> for CI pipelines.</li>
+        <li><strong>Instrument profiles</strong>: R&amp;S HMP4040, NGE103B, HMC8012 · Keysight E36312A, 34461A, DAQ970A ·
+          Keithley DMM6500, DAQ6510 · Siglent SPD3303X, SDM3065X.</li>
+      </ul>
+      <p class="links">
+        <a href="https://github.com/steitec/scpi-sim">Source on GitHub</a>
+        <a href="https://pypi.org/project/scpi-sim/">PyPI</a>
+        <a href="https://github.com/steitec/scpi-sim/issues">Questions or ideas? Open an issue</a>
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p>The simulation runs entirely in your browser. This page sets no cookies, has no tracking and sends
+      nothing anywhere. <a href="privacy.html">Privacy</a></p>
+    <p>scpi-sim <span id="version"></span> · MIT licensed · by <a href="https://github.com/steitec">steitec</a> ·
+      Instrument names are trademarks of their owners; scpi-sim is not affiliated with them.</p>
+  </footer>
+</body>
+</html>
