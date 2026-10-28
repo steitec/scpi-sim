@@ -9,3 +9,6 @@ build
 dist
 docs
 tests
+web/dist
+web/node_modules
+web/test-results
