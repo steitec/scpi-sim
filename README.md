@@ -1,5 +1,11 @@
 # scpi-sim
 
+[![CI](https://github.com/steitec/scpi-sim/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/steitec/scpi-sim/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/scpi-sim)](https://pypi.org/project/scpi-sim/)
+[![Python](https://img.shields.io/pypi/pyversions/scpi-sim)](https://pypi.org/project/scpi-sim/)
+[![License](https://img.shields.io/pypi/l/scpi-sim)](https://github.com/steitec/scpi-sim/blob/main/LICENSE)
+[![Demo](https://img.shields.io/badge/demo-live%20in%20your%20browser-2ea44f)](https://scpi-sim.steitec.net)
+
 Simulated SCPI lab instruments — a multimeter, a power supply and a relay
 multiplexer — that listen on a raw TCP socket like real LAN instruments on
 port 5025, and on request over [VXI-11 and HiSLIP](#vxi-11-and-hislip)
