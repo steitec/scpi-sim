@@ -29,15 +29,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: docker build -t scpi-sim:ci .
-      - run: docker run -d --name sim -p 5025-5027:5025-5027 scpi-sim:ci
+      - run: docker run -d --name sim -p 5025-5027:5025-5027 -p 1111:111 -p 5098:5098 -p 4880:4880 scpi-sim:ci
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - run: pip install .
+      - run: pip install . pyvisa pyvisa-py
       - name: The container answers *IDN?
         run: |
           for i in $(seq 1 30); do scpi-sim query --timeout 1 "*IDN?" && break; sleep 1; done
           scpi-sim query "*IDN?" | grep '^scpi-sim,PSU'
+      - name: The container answers over VXI-11 (through the port mapper) and HiSLIP
+        shell: python
+        run: |
+          import pyvisa
+          from pyvisa_py.protocols import rpc
+          rpc.PMAP_PORT = 1111  # the runner may run rpcbind on 111
+          rm = pyvisa.ResourceManager("@py")
+          for resource, model in (("TCPIP0::127.0.0.1::psu::INSTR", "PSU"),
+                                  ("TCPIP0::127.0.0.1::hislip_dmm::INSTR", "DMM")):
+              r = rm.open_resource(resource, read_termination="\n", timeout=5000)
+              answer = r.query("*IDN?")
+              print(resource, answer)
+              assert answer.split(",")[1] == model
+              r.close()
       - if: always()
         run: docker logs sim; docker rm -f sim
 

@@ -2,7 +2,9 @@
 
 Simulated SCPI lab instruments — a multimeter, a power supply and a relay
 multiplexer — that listen on a raw TCP socket like real LAN instruments on
-port 5025. Develop and test instrument automation without the hardware.
+port 5025, and on request over [VXI-11 and HiSLIP](#vxi-11-and-hislip)
+(`TCPIP::host::INSTR`, `hislip0`). Develop and test instrument automation
+without the hardware.
 [Profiles](#profiles) make them answer like ten common real models from
 Rohde & Schwarz, Keysight, Keithley and Siglent, so code written for those
 instruments runs unchanged.
@@ -29,7 +31,8 @@ in CI at all. scpi-sim gives you instruments that:
 
 - **are real network servers** — anything that can open a TCP socket can talk
   to them: PyVISA (`TCPIP0::127.0.0.1::5025::SOCKET`), C#, LabVIEW, NI MAX,
-  `nc`, your own code
+  `nc`, your own code — and over VXI-11 and HiSLIP, so scripts that open
+  `TCPIP::host::INSTR` or `TCPIP::host::hislip0::INSTR` run unchanged
 - **keep state** like the real thing — settings persist, `*RST` resets them,
   errors go to the error queue, status registers (`*ESR?`, `*STB?`) work
 - **behave physically** — the power supply goes from constant voltage into
@@ -53,7 +56,7 @@ fit for unit tests of PyVISA code. scpi-sim takes a different approach:
 
 | | pyvisa-sim | scpi-sim |
 |---|---|---|
-| Runs as | PyVISA backend in your process | TCP server, one port per instrument |
+| Runs as | PyVISA backend in your process | TCP server: raw socket per instrument, VXI-11, HiSLIP |
 | Usable from | Python with PyVISA | any language or tool |
 | Devices defined in | YAML | Python classes (generic instruments included) |
 
@@ -465,6 +468,73 @@ The control port speaks one JSON object per line:
 authentication: with `--host 0.0.0.0` anyone who can reach the port can
 inject faults, so expose a bench only on a network you trust.
 
+## VXI-11 and HiSLIP
+
+Many PyVISA scripts do not open a raw socket but the instrument's VISA LAN
+protocol: `TCPIP::192.168.1.20::INSTR` (VXI-11) or
+`TCPIP::192.168.1.20::hislip0::INSTR` (HiSLIP). scpi-sim serves both next to
+the raw sockets, so such a script runs against the simulator once the address
+points to it:
+
+```console
+$ scpi-sim serve --hislip --vxi11 --no-portmapper --profile keysight-34461a
+scpi-sim: keysight-34461a (34461A) listening on 127.0.0.1:5025 (Ctrl+C to stop)
+scpi-sim: HiSLIP on 127.0.0.1:4880
+scpi-sim: VXI-11 on 127.0.0.1:40651, no port mapper
+scpi-sim:   keysight-34461a (34461A): TCPIP0::127.0.0.1::hislip0::INSTR
+scpi-sim:   keysight-34461a (34461A): TCPIP0::127.0.0.1,40651::inst0::INSTR
+```
+
+| Option | Meaning |
+|---|---|
+| `--hislip` | serve HiSLIP, port 4880 (`--hislip-port`) |
+| `--vxi11` | serve VXI-11; the core channel gets any free port (`--vxi11-port`) |
+| `--portmapper-port` | the port mapper VXI-11 clients ask for the core port, default 111 |
+| `--no-portmapper` | VXI-11 without port mapper |
+
+The options go before the instrument (`serve --hislip psu`) and work with
+`--profile` and `--bench` too.
+
+**Port 111.** A VXI-11 client first asks the port mapper on port 111 where the
+instrument listens. Binding port 111 takes privileges on Linux and macOS, and
+`rpcbind` may already use it. Choose one:
+
+- `--no-portmapper` and put the core port into the resource string:
+  `TCPIP0::127.0.0.1,40651::inst0::INSTR` (PyVISA-py understands this form;
+  NI-VISA and Keysight VISA do not).
+- the Docker image, which serves the port mapper on 111 (see [Docker](#docker)).
+- on Linux: `sudo setcap cap_net_bind_service=+ep "$(readlink -f "$(which python3)")"`
+  — this allows every program run by that Python to use low ports.
+
+**Device names.** One simulator may serve several instruments, so the LAN
+device name picks one: for a single instrument `inst0` and `hislip0`; on a
+bench `inst<N>` / `hislip<N>` by position in the bench file, or the instrument
+name: `TCPIP0::host::psu::INSTR` (VXI-11), `TCPIP0::host::hislip_psu::INSTR`
+(HiSLIP — PyVISA-py recognises HiSLIP by the `hislip` prefix).
+`bench.resource("psu", "hislip")` and `bench.resource("psu", "vxi11")` build
+these strings.
+
+**What behaves like a real instrument:**
+
+- Answers wait in an output buffer until the client reads them; reading when
+  nothing is waiting runs into the client's timeout, like on a real instrument
+  after a command without a query.
+- A new message before the answer was read discards the answer and gives
+  `-410,"Query INTERRUPTED"` (IEEE 488.2).
+- The status byte (`read_stb()`, VXI-11 `device_readstb`, HiSLIP
+  `AsyncStatusQuery`) has MAV (16) while an answer waits.
+- Device clear (`clear()`) drops pending input and answers; the error queue
+  and the settings stay.
+- Locks (`lock_excl()`; VXI-11 `device_lock`, HiSLIP `AsyncLock`) are
+  exclusive and shared across both protocols.
+- Faults work as on the raw socket: `no_response`, `delay` (also cancelled by a
+  device clear) and `disconnect` (closes the link or HiSLIP session).
+
+Not supported: service requests (SRQ, interrupt channel), `device_docmd`,
+HiSLIP overlapped mode and HiSLIP 2.0 (TLS, authentication); shared lock
+requests are granted as exclusive locks. Tested with PyVISA-py; not yet
+verified against NI-VISA or Keysight VISA — reports welcome.
+
 ## pytest plugin
 
 Installing scpi-sim registers a pytest plugin. The `scpi_bench` fixture
@@ -491,6 +561,8 @@ def test_dead_multimeter_raises_timeout(scpi_bench):
   generic `psu`, `dmm` and `mux`, not wired.
 - `scpi_bench.resource(name)` gives the VISA resource string,
   `scpi_bench.port(name)` the port, `scpi_bench.<name>` the instrument object.
+- The bench serves HiSLIP and VXI-11 too (free ports, no port mapper):
+  `scpi_bench.resource("dmm", "hislip")`, `scpi_bench.resource("dmm", "vxi11")`.
 - `scpi_bench_factory(path_or_dict)` starts further benches; a relative path
   is relative to the rootdir, like the ini key.
 
@@ -528,6 +600,7 @@ Error codes:
 | -224 | Illegal parameter value |
 | -300 | Device-specific error |
 | -350 | Queue overflow |
+| -410 | Query INTERRUPTED (VXI-11 and HiSLIP only, see above) |
 
 ## Docker
 
@@ -545,6 +618,20 @@ docker run --rm -p 5025-5028:5025-5028 -v "$PWD/bench":/bench ghcr.io/steitec/sc
 ```
 
 The control port has no authentication, hence `127.0.0.1:` in front of it.
+
+The image also serves HiSLIP (4880) and VXI-11 (port mapper on 111, core
+channel on 5098), so `TCPIP0::localhost::psu::INSTR` and
+`TCPIP0::localhost::hislip_psu::INSTR` work from the host:
+
+```bash
+docker run --rm -p 5025-5027:5025-5027 -p 111:111 -p 111:111/udp -p 5098:5098 -p 4880:4880 \
+  ghcr.io/steitec/scpi-sim
+```
+
+The port mapper tells clients the core port inside the container, so map 5098
+to the same port outside. On Linux, publishing port 111 fails if `rpcbind`
+runs on the host; leave the port mapper out then and use
+`TCPIP0::localhost,5098::psu::INSTR` with PyVISA-py.
 Any other command works as well, e.g.
 `docker run --rm -p 5025:5025 ghcr.io/steitec/scpi-sim serve dmm --host 0.0.0.0`.
 In CI, start it as a service container and point your tests at
@@ -602,7 +689,7 @@ class Thermometer(Instrument):
 ## Roadmap
 
 - **later** — more profiles (reports from owners of the real instruments
-  welcome), VXI-11, a simple oscilloscope
+  welcome), service requests over VXI-11/HiSLIP, a simple oscilloscope
 
 ## License
 

@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.5.0 - 2026-10-29
+
+### Added
+
+- **VXI-11 and HiSLIP**: instruments answer on `TCPIP::host::INSTR` and
+  `TCPIP::host::hislip0::INSTR` as well, so PyVISA scripts written for those
+  resource strings run unchanged. `scpi-sim serve --hislip --vxi11` (with an
+  instrument, `--profile` or `--bench`); options `--hislip-port` (default
+  4880), `--vxi11-port`, `--portmapper-port` (default 111), `--no-portmapper`.
+  On a bench the device name picks the instrument (`inst<N>`/`hislip<N>` or
+  `psu`/`hislip_psu`).
+- VXI-11: core and abort channel, port mapper (TCP and UDP), read with request
+  size and termination character, status byte, device clear, exclusive locks.
+- HiSLIP 1.0 (synchronous mode): device clear handshake, status query,
+  exclusive locks, maximum message size.
+- On both: answers wait until they are read; a new message before that gives
+  `-410,"Query INTERRUPTED"`; MAV in the status byte; faults `no_response`,
+  `delay`, `disconnect` work as on the raw socket.
+- `Bench.start(hislip_port=, vxi11_port=, portmapper_port=)`,
+  `Bench.resource(name, "hislip" | "vxi11")`, `HislipServer`, `Vxi11Server`,
+  `PortMapper`, `Instrument.status_byte()`.
+- pytest plugin: benches serve HiSLIP and VXI-11 too (free ports).
+- Docker image: HiSLIP on 4880, VXI-11 on 5098 with the port mapper on 111.
+
 ## 0.4.2 - 2026-10-28
 
 ### Added
