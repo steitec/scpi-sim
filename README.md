@@ -11,6 +11,8 @@ instruments runs unchanged.
 
 **Try it in your browser:** <https://scpi-sim.steitec.net>, a simulated power
 supply wired to a DAQ, running the real simulator in the page.
+Walkthroughs, CI recipes and troubleshooting are in the
+[wiki](https://github.com/steitec/scpi-sim/wiki); this README is the reference.
 
 ![Demo: a simulated power supply driven from the command line](https://raw.githubusercontent.com/steitec/scpi-sim/main/docs/demo.gif)
 
