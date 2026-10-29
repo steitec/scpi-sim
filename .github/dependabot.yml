@@ -41,3 +41,8 @@ updates:
     groups:
       docker-web:
         patterns: ["*"]
+    ignore:
+      # Stay on nginx stable (even minor, e.g. 1.30); odd minors are mainline.
+      # Patches still come in; move to the next stable branch by hand.
+      - dependency-name: "nginx"
+        update-types: ["version-update:semver-minor"]
