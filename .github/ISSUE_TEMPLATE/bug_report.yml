@@ -1,0 +1,56 @@
+name: Bug report
+description: Something crashes or behaves differently than documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Security problems go through
+        [private reporting](https://github.com/steitec/scpi-sim/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Commands, bench file or a minimal script. A SCPI transcript (command → answer) helps a lot.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output
+      description: Traceback or server log, if any.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: scpi-sim version
+      description: Output of `pip show scpi-sim` or the Docker image tag.
+      placeholder: "0.5.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Connection
+      multiple: true
+      options:
+        - Raw socket (TCPIP::host::port::SOCKET)
+        - VXI-11 (TCPIP::host::INSTR)
+        - HiSLIP (TCPIP::host::hislip0::INSTR)
+        - pytest plugin / Python API
+        - Docker image
+        - Browser demo
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, PyVISA / PyVISA-py versions if used.
+      placeholder: "Ubuntu 24.04, Python 3.12, pyvisa 1.14, pyvisa-py 0.7"

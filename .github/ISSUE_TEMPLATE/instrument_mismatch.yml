@@ -1,0 +1,48 @@
+name: Instrument behaviour mismatch
+description: A simulated instrument or profile answers differently than the real one.
+labels: ["profile"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports from owners of the real instruments are especially welcome.
+  - type: input
+    id: instrument
+    attributes:
+      label: Instrument / profile
+      placeholder: "Keysight 34461A (profile keysight-34461a)"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware of the real instrument
+      description: From `*IDN?` on the real device, if you have it.
+  - type: textarea
+    id: real
+    attributes:
+      label: Real instrument
+      description: Commands and answers from the real device.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: simulated
+    attributes:
+      label: scpi-sim
+      description: The same commands and the simulator's answers.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Reference
+      description: Programming manual section or page, if the behaviour is documented.
+  - type: input
+    id: version
+    attributes:
+      label: scpi-sim version
+      placeholder: "0.5.0"
+    validations:
+      required: true

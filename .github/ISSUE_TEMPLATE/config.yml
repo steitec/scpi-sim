@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation and wiki
+    url: https://github.com/steitec/scpi-sim/wiki
+    about: Getting started, VXI-11/HiSLIP, CI recipes and troubleshooting.
+  - name: Browser demo
+    url: https://scpi-sim.steitec.net
+    about: Try the simulated instruments without installing anything.
+  - name: Report a security vulnerability
+    url: https://github.com/steitec/scpi-sim/security/advisories/new
+    about: Please report security problems privately, not as an issue.
