@@ -116,3 +116,19 @@ def test_pool_stops_every_bench_even_if_one_fails():
         pool.stop_all()
     assert stopped == [True]
     type(first).stop(first)  # the replaced stop() never ran: stop the real servers
+
+
+def test_bench_serves_hislip_and_vxi11(pytester):
+    pytester.makepyfile("""
+        import pyvisa
+
+        def test_it(scpi_bench):
+            rm = pyvisa.ResourceManager("@py")
+            for transport in ("hislip", "vxi11"):
+                r = rm.open_resource(scpi_bench.resource("dmm", transport))
+                r.read_termination = "\\n"
+                assert r.query("*IDN?").startswith("scpi-sim,DMM")
+                r.close()
+            rm.close()
+    """)
+    pytester.runpytest().assert_outcomes(passed=1)

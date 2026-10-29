@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import signal
 import socket
 import sys
@@ -14,7 +15,9 @@ from .control import send_control
 from .instrument import Instrument
 from .instruments import Multimeter, Multiplexer, PowerSupply
 from .profiles import PROFILES, get_profile
-from .transport import InstrumentServer
+from .hislip import HislipServer
+from .transport import InstrumentServer, TcpServer
+from .vxi11 import PortMapper, Vxi11Server, portmapper_mappings
 
 
 def _port(text: str) -> int:
@@ -41,6 +44,16 @@ def _parser() -> argparse.ArgumentParser:
                        help="with --profile: TCP port (default: 5025, 0 = any free port)")
     serve.add_argument("--load", dest="profile_load", type=float, metavar="OHMS",
                        help="with --profile of a power supply: resistive load on every output")
+    lan = serve.add_argument_group("VISA LAN protocols (besides the raw socket; put them before INSTRUMENT)")
+    lan.add_argument("--hislip", action="store_true", help="also serve HiSLIP (TCPIP::host::hislip0::INSTR)")
+    lan.add_argument("--hislip-port", type=_port, default=4880, metavar="PORT", help="HiSLIP port (default: 4880)")
+    lan.add_argument("--vxi11", action="store_true", help="also serve VXI-11 (TCPIP::host::inst0::INSTR)")
+    lan.add_argument("--vxi11-port", type=_port, default=0, metavar="PORT",
+                     help="VXI-11 core port (default: 0 = any free port, announced by the port mapper)")
+    lan.add_argument("--portmapper-port", type=_port, default=111, metavar="PORT",
+                     help="port mapper for VXI-11 (default: 111, needs privileges on Linux)")
+    lan.add_argument("--no-portmapper", action="store_true",
+                     help="VXI-11 without port mapper; clients need the core port: TCPIP::host,PORT::inst0::INSTR")
     kinds = serve.add_subparsers(dest="kind", metavar="INSTRUMENT")
 
     def kind(name: str, help: str) -> argparse.ArgumentParser:
@@ -144,9 +157,12 @@ def _serve_bench(args: argparse.Namespace) -> int:
         return 2
     host = args.bench_host
     try:
-        bench.start(host=host)
+        bench.start(host=host, hislip_port=args.hislip_port if args.hislip else None,
+                    vxi11_port=args.vxi11_port if args.vxi11 else None,
+                    portmapper_port=None if args.no_portmapper else args.portmapper_port)
     except OSError as error:
         print(f"scpi-sim: error: cannot start bench on {host}: {error.strerror or error}", file=sys.stderr)
+        _portmapper_hint(args, error)
         return 1
     stop = _stop_event()
     for name, instrument in bench.instruments.items():
@@ -158,11 +174,63 @@ def _serve_bench(args: argparse.Namespace) -> int:
             pass
     if bench.control_port is not None:
         print(f"scpi-sim: control on {host}:{bench.control_port}")
+    _announce_lan(host, bench.hislip_port, bench.vxi11_port, bench.portmapper_port,
+                  [(name, bench.resource(name, "hislip") if args.hislip else None,
+                    bench.resource(name, "vxi11") if args.vxi11 else None) for name in bench.instruments])
     print("scpi-sim: bench running (Ctrl+C to stop)", flush=True)
     _wait(stop)
     bench.stop()
     print("scpi-sim: stopped", flush=True)
     return 0
+
+
+def _portmapper_hint(args: argparse.Namespace, error: OSError) -> None:
+    if (args.vxi11 and not args.no_portmapper and args.portmapper_port < 1024
+            and error.errno in (errno.EACCES, errno.EPERM, errno.EADDRINUSE)):
+        print(f"scpi-sim: hint: the port mapper needs port {args.portmapper_port}, which takes privileges "
+              "(or rpcbind already uses it). Use --no-portmapper and the resource "
+              "TCPIP::host,PORT::inst0::INSTR (PyVISA-py), or --portmapper-port, or run the Docker image.",
+              file=sys.stderr)
+
+
+def _announce_lan(host: str, hislip: int | None, vxi11: int | None, portmapper: int | None,
+                  resources: list[tuple[str, str | None, str | None]]) -> None:
+    if hislip is not None:
+        print(f"scpi-sim: HiSLIP on {host}:{hislip}")
+    if vxi11 is not None:
+        mapper = f", port mapper on {host}:{portmapper}" if portmapper is not None else ", no port mapper"
+        print(f"scpi-sim: VXI-11 on {host}:{vxi11}{mapper}")
+    for name, hislip_resource, vxi11_resource in resources:
+        for resource in (hislip_resource, vxi11_resource):
+            if resource is not None:
+                if host in ("0.0.0.0", "::", ""):  # listening everywhere: clients use the machine's address
+                    resource = resource.replace(f"TCPIP0::{host}", "TCPIP0::<host>", 1)
+                print(f"scpi-sim:   {name}: {resource}")
+
+
+def _lan_servers(args: argparse.Namespace, instrument: Instrument, host: str) -> list[TcpServer]:
+    """HiSLIP / VXI-11 / port mapper servers for one instrument, not started yet."""
+    servers: list[TcpServer] = []
+    if args.hislip:
+        servers.append(HislipServer(instrument, host=host, port=args.hislip_port))
+    if args.vxi11:
+        servers.append(Vxi11Server(instrument, host=host, port=args.vxi11_port))
+        if not args.no_portmapper:
+            servers.append(PortMapper(host=host, port=args.portmapper_port))
+    return servers
+
+
+def _single_resources(host: str, servers: list[TcpServer]) -> tuple[str | None, str | None]:
+    hislip = vxi11 = None
+    mapper = next((s for s in servers if isinstance(s, PortMapper)), None)
+    for server in servers:
+        if isinstance(server, HislipServer):
+            port = "" if server.port == 4880 else f",{server.port}"
+            hislip = f"TCPIP0::{host}::hislip0{port}::INSTR"
+        elif isinstance(server, Vxi11Server):
+            where = host if mapper is not None and mapper.port == 111 else f"{host},{server.port}"
+            vxi11 = f"TCPIP0::{where}::inst0::INSTR"
+    return hislip, vxi11
 
 
 def _query(args: argparse.Namespace) -> int:
@@ -212,6 +280,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if [bool(args.bench), bool(args.kind), bool(args.profile)].count(True) != 1:
         parser.error("serve needs an instrument (dmm, psu, mux), --profile NAME or --bench FILE")
+    if not (args.vxi11 or args.hislip) and (args.no_portmapper or args.vxi11_port or args.portmapper_port != 111
+                                            or args.hislip_port != 4880):
+        parser.error("--hislip-port, --vxi11-port, --portmapper-port and --no-portmapper need --hislip or --vxi11")
     if not args.profile and (args.profile_port is not None or args.profile_load is not None):
         parser.error("--port and --load before the instrument only work with --profile "
                      "(for an instrument, put them after it: serve psu --port 5025)")
@@ -238,16 +309,29 @@ def main(argv: list[str] | None = None) -> int:
         host, port, label = args.host, args.port, instrument.model
 
     server = InstrumentServer(instrument, host=host, port=port)
+    started: list[TcpServer] = []
     try:
-        server.start()
+        for each in [server, *_lan_servers(args, instrument, host)]:
+            if isinstance(each, PortMapper):
+                portmapper_mappings(each, started[-1].port)
+            each.start()
+            started.append(each)
     except OSError as error:
-        print(f"scpi-sim: error: cannot listen on {host}:{port}: {error.strerror or error}", file=sys.stderr)
+        print(f"scpi-sim: error: cannot listen on {host}:{each.port}: {error.strerror or error}", file=sys.stderr)
+        _portmapper_hint(args, error)
+        for each in reversed(started):
+            each.stop()
         return 1
 
     stop = _stop_event()
-    print(f"scpi-sim: {label} listening on {host}:{server.port} (Ctrl+C to stop)", flush=True)
+    port_of = {type(s): s.port for s in started}
+    print(f"scpi-sim: {label} listening on {host}:{server.port} (Ctrl+C to stop)")
+    _announce_lan(host, port_of.get(HislipServer), port_of.get(Vxi11Server), port_of.get(PortMapper),
+                  [(label, *_single_resources(host, started))] if len(started) > 1 else [])
+    sys.stdout.flush()
     _wait(stop)
-    server.stop()
+    for each in reversed(started):
+        each.stop()
     print("scpi-sim: stopped", flush=True)
     return 0
 

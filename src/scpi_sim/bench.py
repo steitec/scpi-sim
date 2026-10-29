@@ -22,12 +22,14 @@ from .console import ConsoleServer
 from .control import ControlServer
 from .device import Console, Device
 from .errors import ScpiError
+from .hislip import HislipServer
 from .instrument import Instrument
 from .instruments import Multimeter, Multiplexer, PowerSupply
 from .loads import Load, Parallel, Resistor
 from .options import real as _real, whole as _whole
 from .profiles import get_profile
 from .transport import InstrumentServer
+from .vxi11 import PortMapper, Vxi11Server, portmapper_mappings
 
 def _text(value):
     if not isinstance(value, str) or not value:
@@ -44,7 +46,7 @@ _TYPES = {
 }
 # names an instrument cannot have: they are attributes of Bench
 _RESERVED = {"instruments", "devices", "ports", "control_port", "host", "start", "stop", "port", "resource",
-             "console_port", "console_url"}
+             "console_port", "console_url", "hislip_port", "vxi11_port", "portmapper_port"}
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 _NODE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _WIRE = re.compile(r"\s*(\S+)\s*->\s*(\S+)\s*")
@@ -172,6 +174,9 @@ class Bench:
         self._servers: dict[str, InstrumentServer] = {}
         self._control: ControlServer | None = None
         self._consoles: dict[str, ConsoleServer] = {}
+        self._hislip: HislipServer | None = None
+        self._vxi11: Vxi11Server | None = None
+        self._portmapper: PortMapper | None = None
         self._switch_lock = threading.Lock()  # relay check + switch, across all multiplexers
 
     # --- construction -------------------------------------------------------------
@@ -504,7 +509,13 @@ class Bench:
 
     # --- running ----------------------------------------------------------------------
 
-    def start(self, host: str = "127.0.0.1", free_ports: bool = False) -> None:
+    def start(self, host: str = "127.0.0.1", free_ports: bool = False, hislip_port: int | None = None,
+              vxi11_port: int | None = None, portmapper_port: int | None = None) -> None:
+        """Serve every instrument on its raw socket port, plus HiSLIP and VXI-11 when their port is given.
+
+        ``free_ports``: any free port instead of the configured ones (also for HiSLIP,
+        VXI-11 and the port mapper). The port mapper only runs together with VXI-11.
+        """
         try:
             for name, instrument in self.instruments.items():
                 server = InstrumentServer(instrument, host=host, port=0 if free_ports else self.ports[name])
@@ -517,6 +528,16 @@ class Bench:
             if self.control_port is not None:
                 self._control = ControlServer(self, host=host, port=0 if free_ports else self.control_port)
                 self.control_port = self._control.start()
+            if hislip_port is not None:
+                self._hislip = HislipServer(self.instruments, host=host, port=0 if free_ports else hislip_port)
+                self._hislip.start()
+            if vxi11_port is not None:
+                self._vxi11 = Vxi11Server(self.instruments, host=host, port=0 if free_ports else vxi11_port)
+                self._vxi11.start()
+                if portmapper_port is not None:
+                    self._portmapper = PortMapper(host=host, port=0 if free_ports else portmapper_port)
+                    portmapper_mappings(self._portmapper, self._vxi11.port)
+                    self._portmapper.start()
         except BaseException:
             self.stop()
             raise
@@ -524,8 +545,9 @@ class Bench:
 
     def stop(self) -> None:
         """Stop every server; if one fails, still stop the others, then re-raise."""
-        servers = [*([self._control] if self._control else []), *self._consoles.values(), *self._servers.values()]
-        self._control = None
+        extras = [self._portmapper, self._vxi11, self._hislip, self._control]
+        servers = [*(s for s in extras if s is not None), *self._consoles.values(), *self._servers.values()]
+        self._control = self._hislip = self._vxi11 = self._portmapper = None
         self._consoles.clear()
         self._servers.clear()
         failure = None
@@ -540,8 +562,39 @@ class Bench:
     def port(self, name: str) -> int:
         return self._servers[name].port
 
-    def resource(self, name: str) -> str:
-        return f"TCPIP0::{self.host}::{self.port(name)}::SOCKET"
+    @property
+    def hislip_port(self) -> int | None:
+        return self._hislip.port if self._hislip else None
+
+    @property
+    def vxi11_port(self) -> int | None:
+        return self._vxi11.port if self._vxi11 else None
+
+    @property
+    def portmapper_port(self) -> int | None:
+        return self._portmapper.port if self._portmapper else None
+
+    def resource(self, name: str, transport: str = "socket") -> str:
+        """VISA resource string of instrument ``name`` over ``socket``, ``vxi11`` or ``hislip``.
+
+        Without the standard port (111 for the port mapper, 4880 for HiSLIP) the port
+        goes into the string, in the form PyVISA-py understands.
+        """
+        if name not in self.instruments:
+            raise KeyError(name)
+        if transport == "socket":
+            return f"TCPIP0::{self.host}::{self.port(name)}::SOCKET"
+        if transport == "vxi11":
+            if self._vxi11 is None:
+                raise ValueError("VXI-11 is not running (start the bench with vxi11_port)")
+            host = self.host if self.portmapper_port == 111 else f"{self.host},{self._vxi11.port}"
+            return f"TCPIP0::{host}::{name}::INSTR"
+        if transport == "hislip":
+            if self._hislip is None:
+                raise ValueError("HiSLIP is not running (start the bench with hislip_port)")
+            port = "" if self._hislip.port == 4880 else f",{self._hislip.port}"
+            return f"TCPIP0::{self.host}::hislip_{name}{port}::INSTR"
+        raise ValueError(f"unknown transport {transport!r} (socket, vxi11, hislip)")
 
     def console_port(self, name: str) -> int:
         """Bound console port of device ``name``; KeyError if it has no console."""

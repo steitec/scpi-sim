@@ -240,16 +240,23 @@ class Instrument:
     def _sre_query(self, call: Call) -> int:
         return self._sre
 
+    def status_byte(self, mav: bool = False) -> int:
+        """The IEEE 488.2 status byte; ``mav``: a response is waiting in the transport's output buffer."""
+        with self._lock:
+            stb = 0
+            if self._errors:
+                stb |= 4
+            if mav:
+                stb |= 16
+            if self._esr & self._ese:
+                stb |= 32
+            if stb & self._sre & ~64:
+                stb |= 64
+            return stb
+
     @scpi("*STB?")
     def _stb(self, call: Call) -> int:
-        stb = 0
-        if self._errors:
-            stb |= 4
-        if self._esr & self._ese:
-            stb |= 32
-        if stb & self._sre & ~64:
-            stb |= 64
-        return stb
+        return self.status_byte()
 
     @scpi("*OPC", max_args=0)
     def _opc(self, call: Call) -> None:

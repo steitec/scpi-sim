@@ -208,3 +208,31 @@ def test_current_limit_resolves_nets_once(monkeypatch):
     monkeypatch.setattr(b, "_nets", lambda *a: calls.append(1) or original(*a))
     assert b.psu.process("OUTP:MODE?") == "CC"
     assert len(calls) <= 2
+
+
+def test_resource_strings_per_transport():
+    bench = Bench.from_dict(yaml.safe_load(BASIC))
+    bench.start(free_ports=True, hislip_port=0, vxi11_port=0, portmapper_port=0)
+    try:
+        assert bench.resource("psu") == f"TCPIP0::127.0.0.1::{bench.port('psu')}::SOCKET"
+        assert bench.resource("psu", "hislip") == f"TCPIP0::127.0.0.1::hislip_psu,{bench.hislip_port}::INSTR"
+        assert bench.resource("dmm", "vxi11") == f"TCPIP0::127.0.0.1,{bench.vxi11_port}::dmm::INSTR"
+        assert bench.portmapper_port not in (None, 111)
+        with pytest.raises(ValueError):
+            bench.resource("psu", "gpib")
+        with pytest.raises(KeyError):
+            bench.resource("nope", "hislip")
+    finally:
+        bench.stop()
+    assert bench.hislip_port is bench.vxi11_port is bench.portmapper_port is None
+
+
+def test_resource_for_transport_not_running():
+    bench = Bench.from_dict(yaml.safe_load(BASIC))
+    bench.start(free_ports=True)
+    try:
+        for transport in ("hislip", "vxi11"):
+            with pytest.raises(ValueError, match="not running"):
+                bench.resource("psu", transport)
+    finally:
+        bench.stop()

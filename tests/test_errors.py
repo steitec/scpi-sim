@@ -15,4 +15,4 @@ def test_no_error_entry():
 
 def test_version():
     import scpi_sim
-    assert scpi_sim.__version__ == "0.4.2"
+    assert scpi_sim.__version__ == "0.5.0"

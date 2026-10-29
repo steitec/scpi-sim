@@ -268,3 +268,69 @@ def test_profile_options_without_profile_are_rejected(args):
     with pytest.raises(SystemExit) as e:
         main(args)
     assert e.value.code == 2
+
+
+def test_serve_profile_over_hislip_and_vxi11():
+    import pyvisa
+    p, line, _ = start("--hislip", "--hislip-port", "0", "--vxi11", "--no-portmapper", "--profile", "keysight-34461a")
+    try:
+        lines = [p.stdout.readline() for _ in range(4)]
+        assert lines[0].startswith("scpi-sim: HiSLIP on 127.0.0.1:")
+        assert lines[1].startswith("scpi-sim: VXI-11 on 127.0.0.1:") and "no port mapper" in lines[1]
+        resources = [re.search(r"(TCPIP0::\S+)", text).group(1) for text in lines[2:]]
+        assert "hislip0," in resources[0] and "::inst0::INSTR" in resources[1]
+        rm = pyvisa.ResourceManager("@py")
+        try:
+            for resource in resources:
+                r = rm.open_resource(resource)
+                r.timeout, r.read_termination = 2000, "\n"
+                assert r.query("*IDN?").startswith("Keysight Technologies,34461A,")
+                r.close()
+        finally:
+            rm.close()
+    finally:
+        p.kill()
+        p.communicate()
+
+
+def test_serve_bench_with_portmapper_on_free_port(tmp_path):
+    from helpers import BASIC
+    f = tmp_path / "bench.yaml"
+    f.write_text(BASIC)
+    p = subprocess.Popen([sys.executable, "-m", "scpi_sim.cli", "serve", "--vxi11", "--portmapper-port", "0",
+                          "--hislip", "--hislip-port", "0", "--bench", str(f)],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        out = ""
+        while "bench running" not in out:
+            line = p.stdout.readline()
+            assert line, p.stderr.read()
+            out += line
+        assert re.search(r"VXI-11 on 127\.0\.0\.1:\d+, port mapper on 127\.0\.0\.1:\d+", out)
+        assert "psu: TCPIP0::127.0.0.1::hislip_psu," in out
+        assert re.search(r"dmm: TCPIP0::127\.0\.0\.1,\d+::dmm::INSTR", out)
+    finally:
+        p.kill()
+        p.communicate()
+
+
+def test_portmapper_port_in_use_gives_hint(capsys):
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen()
+        taken = s.getsockname()[1]
+        assert main(["serve", "--vxi11", "--portmapper-port", str(taken), "psu", "--port", "0"]) == 1
+    err = capsys.readouterr().err
+    assert f"cannot listen on 127.0.0.1:{taken}" in err
+
+
+@pytest.mark.parametrize("args", [
+    ["serve", "--hislip-port", "5000", "psu"],
+    ["serve", "--no-portmapper", "psu"],
+    ["serve", "--vxi11-port", "5000", "--profile", "rs-hmp4040"],
+])
+def test_lan_options_need_hislip_or_vxi11(args):
+    with pytest.raises(SystemExit) as e:
+        main(args)
+    assert e.value.code == 2

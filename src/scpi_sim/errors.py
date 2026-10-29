@@ -19,6 +19,7 @@ STANDARD_ERRORS: dict[int, str] = {
     -230: "Data corrupt or stale",
     -300: "Device-specific error",
     -350: "Queue overflow",
+    -410: "Query INTERRUPTED",
 }
 
 

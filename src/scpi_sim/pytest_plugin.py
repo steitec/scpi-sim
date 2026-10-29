@@ -6,6 +6,8 @@ Fixtures:
   ``scpi_bench`` (relative to the rootdir); without either, a generic
   ``psu`` + ``dmm`` + ``mux``. Started on free ports, stopped after the test.
   Instruments in the bench may be profiles of real models (``profile: rs-hmp4040``).
+  Besides the raw sockets the bench serves HiSLIP and VXI-11 (without port
+  mapper): ``scpi_bench.resource("psu", "hislip")`` or ``"vxi11"``.
 - ``scpi_bench_factory`` -- ``factory(path_or_dict)`` for more benches;
   relative paths are relative to the rootdir, like the ini key.
 """
@@ -47,7 +49,7 @@ class BenchPool:
                 source = self.root / source
         try:
             bench = Bench.from_dict(source) if isinstance(source, dict) else Bench.from_file(source)
-            bench.start(free_ports=True)
+            bench.start(free_ports=True, hislip_port=0, vxi11_port=0)
         except BenchError as error:
             pytest.fail(f"scpi-sim bench: {error}", pytrace=False)
         self.benches.append(bench)
