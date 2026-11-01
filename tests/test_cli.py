@@ -167,10 +167,10 @@ def test_fault_cli_rejected_fault(tmp_path, capsys):
 
 def test_serve_bench_config_error_exit_2(tmp_path):
     f = tmp_path / "bench.yaml"
-    f.write_text("instruments: {x: {type: scope, port: 0}}\n")
+    f.write_text("instruments: {x: {type: oven, port: 0}}\n")
     r = subprocess.run([sys.executable, "-m", "scpi_sim.cli", "serve", "--bench", str(f)],
                        capture_output=True, text=True, timeout=10)
-    assert r.returncode == 2 and "scope" in r.stderr and "Traceback" not in r.stderr
+    assert r.returncode == 2 and "oven" in r.stderr and "Traceback" not in r.stderr
 
 
 def test_serve_needs_exactly_one_mode(tmp_path):
@@ -334,3 +334,59 @@ def test_lan_options_need_hislip_or_vxi11(args):
     with pytest.raises(SystemExit) as e:
         main(args)
     assert e.value.code == 2
+
+
+def test_serve_scope_with_signal_and_query_block(capsys):
+    p, line, port = start("scope", "--signal", "1:square,freq=2k,vpp=2", "--noise", "0", "--seed", "1")
+    try:
+        assert line.startswith("scpi-sim: SCOPE listening on 127.0.0.1:")
+        _, f = connect(port)
+        assert query(f, ":TIM:SCAL 5e-4;:MEAS:FREQ?").startswith("+2.0")
+        assert main(["query", "--port", str(port), ":WAV:POIN 100", ":WAV:DATA?", "*IDN?"]) == 0
+        out = capsys.readouterr().out.splitlines()
+        assert out[0] == "#800000100<100 bytes of binary data>"  # the block is read by its length, not to a newline
+        assert out[1].startswith("scpi-sim,SCOPE")
+    finally:
+        p.kill()
+        p.communicate()
+
+
+def test_serve_scope_profile_with_signal(capsys):
+    p = subprocess.Popen([sys.executable, "-m", "scpi_sim.cli", "serve", "--port", "0", "--signal", "1:sine,freq=1k,vpp=4",
+                          "--profile", "siglent-sds1104x-e"], stdout=subprocess.PIPE, text=True)
+    try:
+        line = p.stdout.readline()
+        port = int(re.search(r":(\d+) \(Ctrl\+C", line).group(1))
+        assert main(["query", "--port", str(port), "*IDN?", "C1:WF? DAT2"]) == 0
+        out = capsys.readouterr().out.splitlines()
+        assert out[0].startswith("Siglent Technologies,SDS1104X-E")
+        assert out[1] == "C1:WF DAT2,#9000014000<14000 bytes of binary data>"
+    finally:
+        p.kill()
+        p.communicate()
+
+
+@pytest.mark.parametrize("arguments, message", [
+    (["serve", "--signal", "1:sine", "--profile", "rs-hmp4040"], "--signal only works"),
+    (["serve", "--signal", "1:sine", "psu"], "before the instrument only work with --profile"),
+    (["serve", "scope", "--signal", "nonsense"], "signal"),
+    (["serve", "scope", "--signal", "9:sine"], "channel 9"),
+    (["serve", "scope", "--channels", "3"], "2 or 4"),
+])
+def test_scope_usage_errors(arguments, message, capsys):
+    with pytest.raises(SystemExit):
+        main(arguments)
+    assert message in capsys.readouterr().err
+
+
+def test_profiles_lists_the_scopes(capsys):
+    assert main(["profiles"]) == 0
+    assert "rigol-ds1054z" in capsys.readouterr().out
+
+
+def test_query_answer_with_hash_is_text():
+    import io
+    from scpi_sim.cli import _read_answer
+    assert _read_answer(io.BytesIO(b'0,"see #1 and #x and #"\n')) == b'0,"see #1 and #x and #"'
+    assert _read_answer(io.BytesIO(b"#15abcde\n")) == b"#15<5 bytes of binary data>"
+    assert _read_answer(io.BytesIO(b"pre #2xx\n")) == b"pre #2xx"

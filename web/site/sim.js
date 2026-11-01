@@ -62,5 +62,6 @@ async function load(onStatus) {
     inject: async (fault) => js(demo.inject(fault)),
     reset: async () => js(demo.reset()),
     state: () => js(demo.state()),
+    scopeState: () => js(demo.scope_state()),
   };
 }

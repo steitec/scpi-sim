@@ -6,6 +6,11 @@
 instruments:
   psu: {profile: rs-hmp4040, port: 5025}
   daq: {profile: keysight-daq970a, port: 5026}
+  scope:
+    profile: rigol-ds1054z
+    port: 5027
+    signals:
+      1: {shape: sine, frequency: 1000, vpp: 2}
 loads:
   rail_12v: {type: resistor, ohms: 24}    # 0.5 A at 12 V
   rail_5v: {type: resistor, ohms: 10}     # 0.5 A at 5 V
@@ -14,3 +19,4 @@ wiring:
   - psu.ch2 -> rail_5v
   - daq.101 -> rail_12v                   # the DAQ's built-in DMM sits on its common
   - daq.102 -> rail_5v
+  - scope.ch2 -> rail_12v

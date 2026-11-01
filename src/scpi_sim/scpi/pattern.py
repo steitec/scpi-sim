@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_NODE = re.compile(r"\[:?([A-Za-z]+#?):?\]|([A-Za-z]+#?)")
+_NODE = re.compile(r"\[:?([A-Za-z_]+#?):?\]|([A-Za-z_]+#?)")
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,7 @@ class HeaderPattern:
                 name = m.group(1) or m.group(2)
                 suffix = name.endswith("#")
                 name = name.rstrip("#")
-                short = re.match(r"[A-Z0-9]*", name).group(0)
+                short = re.match(r"[A-Z0-9_]*", name).group(0)
                 self._keywords.append(
                     _Keyword(short, name.upper(), suffix, m.group(1) is not None)
                 )

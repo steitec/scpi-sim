@@ -14,7 +14,7 @@ import time
 import weakref
 
 from .errors import ScpiError
-from .instrument import Instrument
+from .instrument import Instrument, wire_bytes
 from .transport import MAX_LINE
 
 
@@ -77,7 +77,7 @@ class Session:
         delay = self.instrument.take_fault("delay")
         if delay is not None:
             self._ready_at = time.monotonic() + delay["seconds"]
-        self._output += response.encode() + b"\n"
+        self._output += wire_bytes(response) + b"\n"
 
     @property
     def has_output(self) -> bool:

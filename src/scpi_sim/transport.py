@@ -11,7 +11,7 @@ import socket
 import threading
 
 from .errors import ScpiError
-from .instrument import Instrument
+from .instrument import Instrument, wire_bytes
 
 MAX_LINE = 64 * 1024
 
@@ -157,5 +157,5 @@ class InstrumentServer(TcpServer):
                     delay = self.instrument.take_fault("delay")
                     if delay is not None:
                         await asyncio.sleep(delay["seconds"])
-                    writer.write(response.encode() + b"\n")
+                    writer.write(wire_bytes(response) + b"\n")
                     await writer.drain()

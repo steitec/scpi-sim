@@ -8,8 +8,12 @@ delay          seconds (> 0), count=None (forever)  each answer is sent ``second
 disconnect     -                                    the next message closes the connection
 error          code (< 0), message=None             one entry pushed into the error queue
 idn            value                                ``*IDN?`` answers ``value``
-offset         value                                multimeter only: added to every reading
-noise          sigma (>= 0)                         multimeter only: replaces the noise
+offset         value                                multimeter, oscilloscope: added to every reading
+noise          sigma (>= 0)                         multimeter (relative), oscilloscope (volts):
+                                                    replaces the noise
+no_trigger     -                                    oscilloscope only: the trigger never fires
+signal         channel, shape, frequency, vpp,      oscilloscope only: replaces what is at the
+               offset, duty, phase                  channel's input until the faults are cleared
 =============  ===================================  ==========================================
 """
 
@@ -69,6 +73,13 @@ def _number(value: Any) -> float:
     return _finite(value)
 
 
+def _channel(value: Any) -> int:
+    channel = _whole(value)
+    if channel < 1:
+        raise ValueError("must be a whole number >= 1")
+    return channel
+
+
 def _text(value: Any) -> str:
     if value is None:
         raise ValueError("must be text")
@@ -88,7 +99,13 @@ FAULTS: dict[str, dict[str, tuple[Any, Callable[[Any], Any]]]] = {
     "idn": {"value": (_REQUIRED, _text)},
     "offset": {"value": (_REQUIRED, _number)},
     "noise": {"sigma": (_REQUIRED, _non_negative)},
+    "no_trigger": {},
+    "signal": {"channel": (_REQUIRED, _channel), "shape": ("sine", _text), "frequency": (1e3, _positive),
+               "vpp": (1.0, _non_negative), "offset": (0.0, _number), "duty": (0.5, _positive),
+               "phase": (0.0, _number)},
 }
+# only instruments that list them in SPECIFIC_FAULTS accept these
+INSTRUMENT_SPECIFIC_FAULTS = frozenset({"offset", "noise", "no_trigger", "signal"})
 FAULT_KINDS = tuple(FAULTS)
 
 

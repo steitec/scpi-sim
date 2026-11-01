@@ -109,6 +109,12 @@ code { font-family: var(--mono); font-size: .92em; }
 .relay.read { border-color: var(--lcd); color: var(--lcd); }
 .relay.closed { background: var(--led-on); border-color: var(--led-on); color: #0b1a12; }
 
+.badge.trig { border-color: var(--led-on); color: var(--led-on); }
+.badge.trig[data-state="wait"] { border-color: var(--fault); color: var(--fault); }
+.badge.trig[data-state="stop"] { border-color: var(--err); color: var(--err); }
+#scope-screen { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; border-radius: 4px; background: #07100d; }
+.readout { margin: 8px 0 0; color: var(--panel-muted); font: 12px/1.4 var(--mono); overflow-wrap: anywhere; }
+
 .powering { display: none; position: absolute; inset: auto 0 0 0; margin: 0; padding: 6px; text-align: center; font: 12px/1 var(--mono); color: var(--panel-muted); }
 .loading .front { opacity: .55; filter: grayscale(1); }
 .loading .powering { display: block; }
@@ -157,7 +163,7 @@ main > section:not(.bench) { margin-bottom: 40px; }
 .flow .box { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
 .flow .sim { border: 2px dashed var(--accent); font-weight: 700; }
 .flow .arrow, .flow .instead { color: var(--muted); }
-.explain p, .more { max-width: 820px; }
+.explain p, .more ul { max-width: 820px; }
 pre { background: var(--term-bg); color: var(--term); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font: 13px/1.5 var(--mono); }
 .more ul { padding-left: 20px; }
 .more li { margin-bottom: 6px; }

@@ -80,11 +80,11 @@ def test_factory_accepts_file(pytester):
 
 
 def test_config_error_fails_setup(pytester):
-    pytester.makefile(".yaml", bench="instruments: {x: {type: scope, port: 0}}\n")
+    pytester.makefile(".yaml", bench="instruments: {x: {type: oven, port: 0}}\n")
     pytester.makepyfile("def test_it(scpi_bench): pass\n")
     result = pytester.runpytest("--scpi-bench", "bench.yaml")
     result.assert_outcomes(errors=1)
-    result.stdout.fnmatch_lines(["*scope*"])
+    result.stdout.fnmatch_lines(["*oven*"])
 
 
 def test_factory_path_relative_to_rootdir(pytester):

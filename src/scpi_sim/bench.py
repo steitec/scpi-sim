@@ -1,7 +1,7 @@
 """A simulated test bench: instruments wired together, described in YAML.
 
 Wiring lines join terminals (``psu.ch1``, ``dmm.input``, ``mux.101``,
-``mux.common`` or a node name) into nets. A closed multiplexer relay joins its
+``mux.common``, ``scope.ch1`` or a node name) into nets. A closed multiplexer relay joins its
 channel terminal to the common terminal. Loads sit on nodes. Every reading is
 evaluated against the nets as they are at that moment.
 """
@@ -24,7 +24,8 @@ from .device import Console, Device
 from .errors import ScpiError
 from .hislip import HislipServer
 from .instrument import Instrument
-from .instruments import Multimeter, Multiplexer, PowerSupply
+from .instruments import Multimeter, Multiplexer, Oscilloscope, PowerSupply
+from .instruments.scope import ScopeEngine, signals_option
 from .loads import Load, Parallel, Resistor
 from .options import real as _real, whole as _whole
 from .profiles import get_profile
@@ -43,6 +44,8 @@ _TYPES = {
     "dmm": (Multimeter, {"volts": _real(), "amps": _real(), "ohms": _real(low=0), "noise": _real(low=0),
                          "seed": _whole(0)}),
     "mux": (Multiplexer, {"channels": _whole(1, 99)}),
+    "scope": (Oscilloscope, {"channels": _whole(2, 4), "signals": signals_option, "noise": _real(low=0),
+                             "seed": _whole(0)}),
 }
 # names an instrument cannot have: they are attributes of Bench
 _RESERVED = {"instruments", "devices", "ports", "control_port", "host", "start", "stop", "port", "resource",
@@ -50,6 +53,13 @@ _RESERVED = {"instruments", "devices", "ports", "control_port", "host", "start",
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 _NODE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _WIRE = re.compile(r"\s*(\S+)\s*->\s*(\S+)\s*")
+
+
+def _scope_channel(pin: str, scope: ScopeEngine) -> int | None:
+    """``ch2`` -> 2, if the scope has that channel."""
+    if pin.startswith("ch") and pin[2:].isdigit() and 1 <= int(pin[2:]) <= scope.CHANNELS:
+        return int(pin[2:])
+    return None
 
 
 class BenchError(ValueError):
@@ -415,11 +425,14 @@ class Bench:
             raise BenchError(f"{where}: unknown instrument or device {name!r}")
         valid = (
             (pin == "input") if isinstance(instrument, Multimeter) else
+            (_scope_channel(pin, instrument) is not None) if isinstance(instrument, ScopeEngine) else
             (text in self._sources) if isinstance(instrument, PowerSupply) else
             (pin in instrument.common_pins or (pin.isdigit() and int(pin) in instrument.valid_channels))
         )
         if not valid:
             raise BenchError(f"{where}: unknown terminal {text!r}")
+        if isinstance(instrument, ScopeEngine):  # a wired channel shows the DC voltage of its net
+            instrument.inputs[_scope_channel(pin, instrument)] = lambda: self._net_voltage(text)
         return text
 
     def _add_wiring(self, lines) -> None:

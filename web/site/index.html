@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>scpi-sim – simulated SCPI instruments in your browser</title>
-  <meta name="description" content="Try scpi-sim live: a simulated power supply and DAQ that answer real SCPI commands. Develop and test instrument automation without lab hardware.">
+  <meta name="description" content="Try scpi-sim live: a simulated power supply, DAQ and oscilloscope that answer real SCPI commands. Develop and test instrument automation without lab hardware.">
   <meta property="og:title" content="scpi-sim – simulated SCPI instruments in your browser">
-  <meta property="og:description" content="Switch on a simulated power supply, measure it with a DAQ, inject a fault. Real scpi-sim code, running in your browser.">
+  <meta property="og:description" content="Switch on a simulated power supply, measure it, watch it on an oscilloscope, inject a fault. Real scpi-sim code, running in your browser.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://scpi-sim.steitec.net/">
   <meta property="og:image" content="https://scpi-sim.steitec.net/img/bench.png">
@@ -20,8 +20,8 @@
     <p class="eyebrow">scpi-sim · open source</p>
     <h1>Test your test scripts without lab hardware.</h1>
     <p class="lead">scpi-sim simulates lab instruments that answer real SCPI commands. Below is a
-      power supply wired to a DAQ. Switch it on, measure it, break it. The real simulator
-      runs right here in your browser.</p>
+      power supply wired to a DAQ and an oscilloscope. Switch it on, measure it, capture a waveform,
+      break it. The real simulator runs right here in your browser.</p>
   </header>
 
   <main>
@@ -59,12 +59,34 @@
           <div class="relays" id="daq-relays" aria-label="Channels 101 to 110"></div>
           <p class="powering">powering up…</p>
         </article>
+
+        <div class="wiring" aria-label="Oscilloscope wiring">
+          <span>CH1 ← 1&nbsp;kHz sine</span>
+          <span>CH2 ← the 12&nbsp;V rail on PSU CH1</span>
+        </div>
+
+        <article class="front" id="scope" aria-label="Oscilloscope">
+          <header class="front-head">
+            <span class="model">DS1054Z <small>(simulated)</small></span>
+            <span class="kind">oscilloscope · 4 channels</span>
+            <span class="indicators">
+              <span class="badge fault" data-testid="fault-badge-scope" hidden></span>
+              <span class="badge err" data-testid="scope-err" hidden>ERR</span>
+              <span class="badge trig" data-testid="scope-status">AUTO</span>
+            </span>
+          </header>
+          <canvas data-testid="scope-screen" id="scope-screen" width="640" height="400" role="img"
+                  aria-label="Oscilloscope screen: the waveforms of the latest capture"></canvas>
+          <p class="readout" data-testid="scope-readout">– – –</p>
+          <p class="powering">powering up…</p>
+        </article>
       </div>
 
       <div class="console">
         <div class="targets" role="group" aria-label="Send to">
           <button type="button" data-testid="target-psu" data-target="psu" aria-pressed="true">psu</button>
           <button type="button" data-testid="target-daq" data-target="daq" aria-pressed="false">daq</button>
+          <button type="button" data-testid="target-scope" data-target="scope" aria-pressed="false">scope</button>
           <span class="status" data-testid="status" role="status">starting…</span>
         </div>
         <div class="terminal" data-testid="terminal-output" aria-live="polite"></div>
@@ -78,11 +100,17 @@
         <p class="hint">Try these in order:</p>
         <div class="chips" id="chips"></div>
 
+        <p class="hint">Then the oscilloscope:</p>
+        <div class="chips" id="scope-chips"></div>
+
         <p class="hint">Break something:</p>
         <div class="faults">
           <button type="button" data-testid="fault-daq-no-response" data-fault="daq-no-response" disabled>DAQ stops answering</button>
           <button type="button" data-testid="fault-daq-offset" data-fault="daq-offset" disabled>DAQ reads +0.5&nbsp;V off</button>
           <button type="button" data-testid="fault-psu-error" data-fault="psu-error" disabled>PSU reports error −222</button>
+          <button type="button" data-testid="fault-scope-no-trigger" data-fault="scope-no-trigger" disabled>Scope never triggers</button>
+          <button type="button" data-testid="fault-scope-noise" data-fault="scope-noise" disabled>Noisy signal</button>
+          <button type="button" data-testid="fault-scope-probe-off" data-fault="scope-probe-off" disabled>Probe falls off CH1</button>
           <button type="button" data-testid="reset" class="reset" disabled>Reset bench</button>
         </div>
       </div>
@@ -90,7 +118,7 @@
       <div class="fallback" data-testid="fallback" hidden>
         <p><strong>The live demo could not start here.</strong> <span id="fallback-reason"></span></p>
         <p>This is what it looks like. Everything below works the same with <code>pip install scpi-sim</code>.</p>
-        <img src="img/bench.png" alt="The demo bench: power supply channel 1 at 12 V and 0.5 A, the DAQ reading 12 V" width="1200" height="630">
+        <img src="img/bench.png" alt="The demo: power supply channel 1 at 12 V and 0.5 A, an oscilloscope showing a sine and the 12 V rail, and the SCPI terminal" width="1200" height="630">
         <button type="button" data-testid="retry" id="retry">Retry</button>
       </div>
     </section>
@@ -106,8 +134,8 @@
       <p>scpi-sim normally runs on your laptop or in CI and listens on raw TCP sockets like a LAN
         instrument. Your existing scripts connect to it unchanged. It keeps state like the real thing:
         settings, outputs, error queue, relays. A bench file wires supplies, loads and meters together, so
-        measurements follow what the script switched. Ten profiles copy the command dialects
-        of real models from Rohde &amp; Schwarz, Keysight, Keithley and Siglent.</p>
+        measurements follow what the script switched. Fifteen profiles copy the command dialects
+        of real models from Rohde &amp; Schwarz, Keysight, Keithley, Siglent, Rigol and Tektronix.</p>
     </section>
 
     <section class="code">
@@ -120,11 +148,19 @@ rm = pyvisa.ResourceManager("@py")
 opts = dict(read_termination="\n", write_termination="\n")
 psu = rm.open_resource("TCPIP0::127.0.0.1::5025::SOCKET", **opts)
 daq = rm.open_resource("TCPIP0::127.0.0.1::5026::SOCKET", **opts)
+scope = rm.open_resource("TCPIP0::127.0.0.1::5027::SOCKET", **opts)
 
 print(psu.query("*IDN?"))
 psu.write("INST OUT1; VOLT 12; OUTP:SEL ON;:OUTP:GEN ON")
 print(psu.query("MEAS:CURR?"))              # 0.500
-print(daq.query("MEAS:VOLT:DC? (@101)"))    # +1.19994013E+01</code></pre>
+print(daq.query("MEAS:VOLT:DC? (@101)"))    # +1.19994013E+01
+
+scope.write(":TIM:SCAL 0.0002")             # 200 us/div
+print(scope.query(":MEAS:ITEM? FREQ,CHAN1"))  # 1.000040e+03
+fields = scope.query(":WAV:PRE?").split(",")
+yinc, yorigin, yref = float(fields[7]), int(fields[8]), int(fields[9])
+codes = scope.query_binary_values(":WAV:DATA?", datatype="B")
+volts = [(code - yorigin - yref) * yinc for code in codes]</code></pre>
       <p>The bench file is
         <a href="https://github.com/steitec/scpi-sim/blob/main/examples/profiles/bench.yaml">examples/profiles/bench.yaml</a>.</p>
     </section>
@@ -132,11 +168,13 @@ print(daq.query("MEAS:VOLT:DC? (@101)"))    # +1.19994013E+01</code></pre>
     <section class="more">
       <h2>What else it does</h2>
       <ul>
-        <li><strong>Fault injection</strong> from tests or a control port: timeouts, dropped answers, error codes, offsets, noise.</li>
+        <li><strong>Fault injection</strong> from tests or a control port: timeouts, dropped answers, error codes, offsets, noise, a trigger that never fires.</li>
+        <li><strong>VXI-11 and HiSLIP</strong> besides the raw socket, binary waveform blocks on all of them.</li>
         <li><strong>pytest plugin</strong>: start a bench per test run with <code>--scpi-bench bench.yaml</code>.</li>
         <li><strong>Docker image</strong>: <code>ghcr.io/steitec/scpi-sim</code> for CI pipelines.</li>
         <li><strong>Instrument profiles</strong>: R&amp;S HMP4040, NGE103B, HMC8012 · Keysight E36312A, 34461A, DAQ970A ·
-          Keithley DMM6500, DAQ6510 · Siglent SPD3303X, SDM3065X.</li>
+          Keithley DMM6500, DAQ6510 · Siglent SPD3303X, SDM3065X. Oscilloscopes: Rigol DS1054Z · Keysight DSO-X 2024A ·
+          Tektronix TBS2104B · R&amp;S RTB2004 · Siglent SDS1104X-E.</li>
       </ul>
       <p class="links">
         <a href="https://github.com/steitec/scpi-sim">Source on GitHub</a>

@@ -1,7 +1,8 @@
 """Profiles: the generic instruments made to look and answer like real models.
 
-A profile is a subclass of ``PowerSupply``, ``Multimeter`` or ``Multiplexer`` with
-the class attributes ``profile`` (its name), ``kind`` (``psu``/``dmm``/``mux``),
+A profile is a subclass of ``PowerSupply``, ``Multimeter``, ``Multiplexer`` or
+``ScopeEngine`` with the class attributes ``profile`` (its name), ``kind``
+(``psu``/``dmm``/``mux``/``scope``),
 ``description`` and ``options`` (bench options it accepts besides ``port`` and
 ``serial``, as ``{name: converter}``).
 """
@@ -18,6 +19,11 @@ from .siglent_psu import SiglentSpd3303x
 from .rs_dmm import RsHmc8012
 from .siglent_dmm import SiglentSdm3065x
 from .keithley import KeithleyDaq6510, KeithleyDmm6500
+from .keysight_scope import KeysightDsox2024a
+from .rigol_scope import RigolDs1054z
+from .rs_scope import RsRtb2004
+from .siglent_scope import SiglentSds1104xe
+from .tektronix_scope import TektronixTbs2104b
 
 PROFILES: dict[str, type[Instrument]] = {cls.profile: cls for cls in (
     RsHmp4040,
@@ -30,6 +36,11 @@ PROFILES: dict[str, type[Instrument]] = {cls.profile: cls for cls in (
     SiglentSdm3065x,
     KeysightDaq970A,
     KeithleyDaq6510,
+    KeysightDsox2024a,
+    RigolDs1054z,
+    TektronixTbs2104b,
+    RsRtb2004,
+    SiglentSds1104xe,
 )}
 
 

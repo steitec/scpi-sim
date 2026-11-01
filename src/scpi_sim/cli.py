@@ -13,7 +13,8 @@ from . import __version__
 from .bench import Bench, BenchError
 from .control import send_control
 from .instrument import Instrument
-from .instruments import Multimeter, Multiplexer, PowerSupply
+from .instruments import Multimeter, Multiplexer, Oscilloscope, PowerSupply
+from .instruments.scope import parse_signal
 from .profiles import PROFILES, get_profile
 from .hislip import HislipServer
 from .transport import InstrumentServer, TcpServer
@@ -44,6 +45,8 @@ def _parser() -> argparse.ArgumentParser:
                        help="with --profile: TCP port (default: 5025, 0 = any free port)")
     serve.add_argument("--load", dest="profile_load", type=float, metavar="OHMS",
                        help="with --profile of a power supply: resistive load on every output")
+    serve.add_argument("--signal", dest="profile_signals", action="append", metavar="CH:SHAPE[,KEY=VALUE...]",
+                       help="with --profile of an oscilloscope: what is at a channel's input, see serve scope --help")
     lan = serve.add_argument_group("VISA LAN protocols (besides the raw socket; put them before INSTRUMENT)")
     lan.add_argument("--hislip", action="store_true", help="also serve HiSLIP (TCPIP::host::hislip0::INSTR)")
     lan.add_argument("--hislip-port", type=_port, default=4880, metavar="PORT", help="HiSLIP port (default: 4880)")
@@ -76,6 +79,14 @@ def _parser() -> argparse.ArgumentParser:
     mux = kind("mux", "relay multiplexer (channels 101...)")
     mux.add_argument("--channels", type=int, default=16, help="number of channels, 1-99")
 
+    scope = kind("scope", "digital oscilloscope")
+    scope.add_argument("--channels", type=int, default=4, help="number of channels, 2 or 4")
+    scope.add_argument("--signal", action="append", metavar="CH:SHAPE[,KEY=VALUE...]",
+                       help="what is at a channel's input, e.g. 1:square,freq=1k,vpp=3.3,offset=1.65,duty=0.25; "
+                            "shapes: dc, sine, square, triangle, sawtooth (repeat for more channels)")
+    scope.add_argument("--noise", type=float, default=0.002, help="noise at the inputs in volts rms (default: 0.002)")
+    scope.add_argument("--seed", type=int, help="random seed for reproducible noise")
+
     commands.add_parser("profiles", help="list the instrument profiles (real models)")
     q = commands.add_parser("query", help="send SCPI messages to an instrument and print the answers")
     q.add_argument("messages", nargs="+", metavar="MESSAGE", help='e.g. "*IDN?" "VOLT 5" "MEAS:VOLT?"')
@@ -85,7 +96,8 @@ def _parser() -> argparse.ArgumentParser:
 
     f = commands.add_parser("fault", help="inject or clear faults in a running bench (via its control port)")
     f.add_argument("instrument", nargs="?", help="instrument name from the bench file")
-    f.add_argument("kind", nargs="?", help="no_response, delay, disconnect, error, idn, offset, noise")
+    f.add_argument("kind", nargs="?", help="no_response, delay, disconnect, error, idn, offset, noise, "
+                                                   "no_trigger, signal")
     f.add_argument("params", nargs="*", metavar="KEY=VALUE", help="fault parameters, e.g. sigma=0.05")
     f.add_argument("--clear", action="store_true", help="clear all faults of the instrument")
     f.add_argument("--list", action="store_true", help="list the active faults of all instruments")
@@ -233,6 +245,28 @@ def _single_resources(host: str, servers: list[TcpServer]) -> tuple[str | None, 
     return hislip, vxi11
 
 
+def _read_answer(stream) -> bytes:
+    """One answer; a binary block (which may contain newlines) is read by its length and summarized."""
+    text = bytearray()
+    while True:
+        byte = stream.read(1)
+        if not byte or byte == b"\n":
+            return bytes(text)
+        if byte != b"#":
+            text += byte
+            continue
+        digits = stream.read(1)
+        if not digits.isdigit() or digits == b"0":
+            text += byte + digits
+            continue
+        length = stream.read(int(digits))
+        if not length.isdigit():
+            text += byte + digits + length
+            continue
+        stream.read(int(length))
+        text += byte + digits + length + f"<{int(length)} bytes of binary data>".encode()
+
+
 def _query(args: argparse.Namespace) -> int:
     """A minimal cross-platform client, so the examples do not depend on nc."""
     try:
@@ -248,7 +282,7 @@ def _query(args: argparse.Namespace) -> int:
             if "?" not in message:
                 continue
             try:
-                answer = stream.readline()
+                answer = _read_answer(stream)
             except OSError:  # socket timeout
                 answer = b""
             if not answer:
@@ -263,6 +297,9 @@ def _instrument(args: argparse.Namespace) -> Instrument:
         return Multimeter(volts=args.volts, amps=args.amps, ohms=args.ohms, noise=args.noise, seed=args.seed)
     if args.kind == "psu":
         return PowerSupply(channels=args.channels, load_ohms=args.load)
+    if args.kind == "scope":
+        return Oscilloscope(channels=args.channels, signals=dict(map(parse_signal, args.signal or [])),
+                            noise=args.noise, seed=args.seed)
     return Multiplexer(channels=args.channels)
 
 
@@ -279,12 +316,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name:<{width}}  {cls.kind}  {cls.description}")
         return 0
     if [bool(args.bench), bool(args.kind), bool(args.profile)].count(True) != 1:
-        parser.error("serve needs an instrument (dmm, psu, mux), --profile NAME or --bench FILE")
+        parser.error("serve needs an instrument (dmm, psu, mux, scope), --profile NAME or --bench FILE")
     if not (args.vxi11 or args.hislip) and (args.no_portmapper or args.vxi11_port or args.portmapper_port != 111
                                             or args.hislip_port != 4880):
         parser.error("--hislip-port, --vxi11-port, --portmapper-port and --no-portmapper need --hislip or --vxi11")
-    if not args.profile and (args.profile_port is not None or args.profile_load is not None):
-        parser.error("--port and --load before the instrument only work with --profile "
+    if not args.profile and (args.profile_port is not None or args.profile_load is not None or args.profile_signals):
+        parser.error("--port, --load and --signal before the instrument only work with --profile "
                      "(for an instrument, put them after it: serve psu --port 5025)")
     if args.bench:
         return _serve_bench(args)
@@ -295,8 +332,13 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(error.args[0])
         if args.profile_load is not None and cls.kind != "psu":
             parser.error(f"--load only works with a power supply profile, {args.profile} is a {cls.kind}")
+        if args.profile_signals and cls.kind != "scope":
+            parser.error(f"--signal only works with an oscilloscope profile, {args.profile} is a {cls.kind}")
         try:
-            instrument = cls(load_ohms=args.profile_load) if args.profile_load is not None else cls()
+            if args.profile_signals:
+                instrument = cls(signals=dict(map(parse_signal, args.profile_signals)))
+            else:
+                instrument = cls(load_ohms=args.profile_load) if args.profile_load is not None else cls()
         except ValueError as error:
             parser.error(str(error))
         port = 5025 if args.profile_port is None else args.profile_port

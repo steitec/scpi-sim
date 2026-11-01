@@ -17,7 +17,7 @@ def test_unknown_profile_names_the_known_ones():
 def test_every_profile_is_complete(name):
     cls = PROFILES[name]
     assert cls.profile == name
-    assert cls.kind in ("psu", "dmm", "mux")
+    assert cls.kind in ("psu", "dmm", "mux", "scope")
     assert cls.description
     idn = cls().process("*IDN?")
     assert not idn.startswith("scpi-sim") and __version__ not in idn

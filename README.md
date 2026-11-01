@@ -11,17 +11,17 @@
 [![License](https://img.shields.io/pypi/l/scpi-sim)](https://github.com/steitec/scpi-sim/blob/main/LICENSE)
 [![Demo](https://img.shields.io/badge/demo-live%20in%20your%20browser-2ea44f)](https://scpi-sim.steitec.net)
 
-Simulated SCPI lab instruments — a multimeter, a power supply and a relay
-multiplexer — that listen on a raw TCP socket like real LAN instruments on
+Simulated SCPI lab instruments — a multimeter, a power supply, a relay
+multiplexer and an oscilloscope — that listen on a raw TCP socket like real LAN instruments on
 port 5025, and on request over [VXI-11 and HiSLIP](#vxi-11-and-hislip)
 (`TCPIP::host::INSTR`, `hislip0`). Develop and test instrument automation
 without the hardware.
-[Profiles](#profiles) make them answer like ten common real models from
-Rohde & Schwarz, Keysight, Keithley and Siglent, so code written for those
+[Profiles](#profiles) make them answer like fifteen common real models from
+Rohde & Schwarz, Keysight, Keithley, Siglent, Rigol and Tektronix, so code written for those
 instruments runs unchanged.
 
 **Try it in your browser:** <https://scpi-sim.steitec.net>, a simulated power
-supply wired to a DAQ, running the real simulator in the page.
+supply wired to a DAQ and an oscilloscope, running the real simulator in the page.
 Walkthroughs, CI recipes and troubleshooting are in the
 [wiki](https://github.com/steitec/scpi-sim/wiki); this README is the reference.
 
@@ -54,6 +54,9 @@ in CI at all. scpi-sim gives you instruments that:
 - **are strict where real instruments are strict** — short/long forms only,
   the SCPI path rule in compound commands, standard error codes — so bugs in
   your command strings show up before they meet the hardware
+- **capture like a scope** — waveforms come as real IEEE 488.2 binary blocks,
+  through an 8-bit converter and a working edge trigger, so a wrong V/div clips
+  and a level the signal never crosses leaves your `*OPC?` hanging
 - **work together on a bench** — wire a supply, a multiplexer and a
   multimeter in a YAML file, and the multimeter measures what the supply
   delivers into its load
@@ -194,6 +197,51 @@ circuit, which drives the output straight into the current limit).
 Channels are numbered 101, 102, … A list with an invalid channel is rejected
 as a whole. Options: `--channels 16` (1–99).
 
+### Oscilloscope — `scpi-sim serve scope`
+
+```console
+$ scpi-sim serve scope --signal 1:square,freq=1k,vpp=3.3,offset=1.65,duty=0.25 &
+$ scpi-sim query ":CHAN1:OFFS 1.65;:TRIG:LEV 1.65;:TIM:SCAL 5e-4" ":MEAS:FREQ?" ":MEAS:DUTY?" ":WAV:DATA?"
++1.00000000E+03
++2.50000000E+01
+#800001000<1000 bytes of binary data>
+```
+
+| Command | |
+|---|---|
+| `:RUN`, `:STOP`, `:SINGle`, `:DIGitize [<source>,...]`, `:AUToscale`, `:TRIGger:FORCe` | acquisition |
+| `:TER?`, `:OPERegister:CONDition?` | a new trigger event; bit 3 = running |
+| `:CHANnel<n>:SCALe`, `:RANGe`, `:OFFSet`, `:DISPlay`, `:COUPling`, `:PROBe` | vertical (DC, AC, GND) |
+| `:TIMebase:SCALe`, `:RANGe`, `:POSition` | horizontal |
+| `:TRIGger[:EDGE]:LEVel`, `:SOURce`, `:SLOPe`, `:TRIGger:SWEep` | edge trigger, Auto or Normal |
+| `:ACQuire:SRATe?`, `:ACQuire:POINts?` | what the settings give |
+| `:WAVeform:SOURce`, `:FORMat` (BYTE, WORD, ASCii), `:BYTeorder`, `:UNSigned`, `:POINts`, `:POINts:MODE` | transfer settings |
+| `:WAVeform:DATA?`, `:PREamble?`, `:XINCrement?`, `:XORigin?`, `:XREFerence?`, `:YINCrement?`, `:YORigin?`, `:YREFerence?` | the data and how to scale it |
+| `:MEASure:VPP?`, `VMAX`, `VMIN`, `VAVerage`, `VRMS`, `VAMPlitude`, `VTOP`, `VBASe`, `FREQuency`, `PERiod`, `RISetime`, `FALLtime`, `PWIDth`, `NWIDth`, `DUTYcycle`, `NDUTy`, `OVERshoot`, `PREShoot` | `[<source>]`; `+9.9E+37` if there is no result |
+
+It behaves like the instrument, including the ways test code goes wrong:
+
+- **A stopped scope keeps its capture**, with the scale it was taken with; a
+  running one takes a new capture for every query.
+- **The trigger looks at the signal.** Without an edge through the level, Auto
+  sweep runs unsynchronised, Normal keeps the old capture, and Single waits:
+  `*OPC?` gets no answer, so your client times out, as on the real instrument.
+- **Samples pass an 8-bit converter.** Too small a V/div clips, too slow a
+  timebase aliases, and without a complete period on the screen there is no
+  frequency. Measurements are computed from the samples, so they go wrong the same way.
+- **Sample rate and memory depth** depend on the timebase and on how many
+  channels are on. Raw memory can only be read from a stopped scope.
+
+A capture costs nothing until it is read, and then about 1.7 Mpoints per second
+(pure Python): reading 20 Mpoints takes some 12 s, so a client needs a long
+enough timeout, or smaller reads.
+
+Options: `--signal CH:SHAPE[,KEY=VALUE...]` (repeat per channel; shapes `dc`,
+`sine`, `square`, `triangle`, `sawtooth`; keys `freq`, `vpp`, `offset`, `duty`,
+`phase`, `rise`), `--channels 2|4`, `--noise 0.002` (volts rms), `--seed N`.
+Default inputs: CH1 a 1 kHz sine of 2 Vpp, CH2 a 1 kHz square from 0 to 3.3 V,
+CH3 and CH4 0 V; only CH1 is on after `*RST`.
+
 ## Profiles
 
 A profile makes a simulated instrument behave like a specific real model: the
@@ -222,6 +270,28 @@ Rohde&Schwarz,HMP4040,3629.6776.04/100001,2.70
 | `siglent-sdm3065x` | Siglent SDM3065X | multimeter | 34401A style, `CONF?` without resolution |
 | `keysight-daq970a` | Keysight DAQ970A + DAQM901A | multiplexer with built-in DMM | `MEAS:VOLT:DC? (@101,102)`, `ROUT:SCAN`, `INIT`/`FETC?` |
 | `keithley-daq6510` | Keithley DAQ6510 + 7700 | multiplexer with built-in DMM | `ROUT:CLOS (@101)` + `READ?`, `ROUT:SCAN:CRE`, `TRAC:DATA?` |
+| `keysight-dsox2024a` | Keysight InfiniiVision DSO-X 2024A | 4-channel oscilloscope | `:WAV:PRE?`, `:WAV:DATA?`, `:DIG`, `:MEAS:VPP?`; 0x01/0xFF = clipped |
+| `rigol-ds1054z` | Rigol DS1054Z | 4-channel oscilloscope | `:WAV:MODE RAW`, `:WAV:STAR`/`:STOP`, `#9` blocks, `:MEAS:ITEM? VPP,CHAN1`, `:TRIG:STAT?` |
+| `tektronix-tbs2104b` | Tektronix TBS2104B | 4-channel oscilloscope | `DAT:SOU CH1`, `WFMO?`, `CURV?`, `HEADER ON`, `MEASU:IMM:VAL?`, `ALLEV?` |
+| `rs-rtb2004` | Rohde & Schwarz RTB2004 | 4-channel oscilloscope | `CHAN1:DATA?`, `CHAN1:DATA:HEAD?`, `FORM UINT,8`, `MEAS1:RES?`, `RUNS` |
+| `siglent-sds1104x-e` | Siglent SDS1104X-E | 4-channel oscilloscope | `C1:VDIV 500mV`, `C1:WF? DAT2`, `WFSU`, `C1:PAVA? PKPK`, `SAST?`, `INR?` |
+
+The five scopes share nothing on the wire: a Tektronix does not understand
+`:WAV:DATA?`, a Siglent answers `C1:VDIV 5.00E-01V`, and each one's data converts to volts
+with the formula from its own manual:
+
+```console
+$ scpi-sim serve --signal 1:sine,freq=1k,vpp=2 --profile rigol-ds1054z &
+$ scpi-sim query "*IDN?" ":TIM:SCAL 0.0002" ":WAV:PRE?" ":WAV:DATA?" ":MEAS:ITEM? FREQ,CHAN1"
+RIGOL TECHNOLOGIES,DS1054Z,DS1ZA000000001,00.04.03.SP2
+0,0,1200,1,2.000000e-06,-1.200000e-03,0,4.000000e-02,0,127
+#9000001200<1200 bytes of binary data>
+1.000040e+03
+```
+
+`examples/scope/capture_rigol.py` is that procedure with PyVISA, and
+`rigol-ds1054z` also works with the unmodified
+[ds1054z](https://pypi.org/project/ds1054z/) client library over VXI-11.
 
 In a bench file an instrument gets `profile:` instead of (or with a matching)
 `type:`. The profile fixes channels and limits; `serial:` gives one instrument
@@ -235,6 +305,11 @@ is card 1), so wiring the channels is enough:
 instruments:
   psu: {profile: rs-hmp4040, port: 5025}
   daq: {profile: keysight-daq970a, port: 5026}
+  scope:
+    profile: rigol-ds1054z
+    port: 5027
+    signals:
+      1: {shape: sine, frequency: 1000, vpp: 2}
 loads:
   rail_12v: {type: resistor, ohms: 24}
   rail_5v: {type: resistor, ohms: 10}
@@ -243,6 +318,7 @@ wiring:
   - psu.ch2 -> rail_5v
   - daq.101 -> rail_12v
   - daq.102 -> rail_5v
+  - scope.ch2 -> rail_12v
 ```
 
 ```python
@@ -255,7 +331,7 @@ volts = [float(v) for v in daq.query("MEAS:VOLT:DC? (@101,102)").split(",")]
 
 Options a profile accepts besides `port` and `serial`: multimeters `volts`,
 `amps`, `ohms`, `noise`, `seed`; data acquisition units `cards` (DAQ970A 1–3,
-DAQ6510 1–2), `noise`, `seed`. Fault injection works on profiles as on any
+DAQ6510 1–2), `noise`, `seed`; oscilloscopes `signals`, `noise`, `seed`. Fault injection works on profiles as on any
 instrument (on a DAQ, `offset` and `noise` act on its built-in multimeter).
 
 What profiles cover, and what not:
@@ -266,14 +342,16 @@ What profiles cover, and what not:
   what is left out; a command the profile does not know gives `-113`.
 - Not: AC and the other exotic functions, trigger models and sample counts,
   list/sequence modes, protection, persona/emulation modes, Keithley TSP,
-  VXI-11/HiSLIP/USB, exact timing or accuracy.
+  USB, exact timing or accuracy. On oscilloscopes not: bandwidth limits, math
+  and FFT, digital channels, serial decoding, trigger types other than edge,
+  averaging and peak detect, delay and phase measurements.
 - The profiles follow the manufacturers' public programming manuals and are
   **not verified on real hardware**. If you own one of these instruments and
   something answers differently, please
   [open an issue](https://github.com/steitec/scpi-sim/issues).
 
 scpi-sim is not affiliated with or endorsed by Rohde & Schwarz, Keysight
-Technologies, Tektronix/Keithley or Siglent; product names and trademarks
+Technologies, Tektronix/Keithley, Siglent or Rigol; product names and trademarks
 belong to their owners.
 
 ## Bench
@@ -318,13 +396,14 @@ $ scpi-sim query "INST:NSEL 1;:MEAS:CURR?"
 +5.00000000E-01
 ```
 
-- **Instruments**: `type` is `psu`, `dmm` or `mux`, `port` is the TCP port
+- **Instruments**: `type` is `psu`, `dmm`, `mux` or `scope`, `port` is the TCP port
   (`0` = any free port); the other keys are the options of that instrument
   (`psu`: `channels`, `max_volts`, `max_amps`; `dmm`: `volts`, `amps`, `ohms`,
-  `noise`, `seed`; `mux`: `channels`).
+  `noise`, `seed`; `mux`: `channels`; `scope`: `channels`, `noise`, `seed`,
+  `signals: {1: {shape: sine, frequency: 1000, vpp: 2}}`).
 - **Wiring**: each line `A -> B` connects two terminals: `<psu>.ch<n>`,
-  `<dmm>.input`, `<mux>.<channel>`, `<mux>.common` or a node name of your
-  choice. A closed multiplexer relay connects its channel to `common`.
+  `<dmm>.input`, `<mux>.<channel>`, `<mux>.common`, `<scope>.ch<n>` (shows
+  the DC voltage of its net) or a node name of your choice. A closed multiplexer relay connects its channel to `common`.
 - **Loads** sit on nodes: `{type: resistor, ohms: 24}` (`ohms: 0` is a short),
   or your own Python class with a `current(volts)` method, e.g. a diode or a
   device that draws constant current:
@@ -467,8 +546,10 @@ ok
 | `disconnect` | — | the next message closes the connection |
 | `error` | `code`, `message` | one entry is pushed into the error queue |
 | `idn` | `value` | `*IDN?` answers `value` |
-| `offset` | `value` | multimeter: added to every reading |
-| `noise` | `sigma` | multimeter: replaces the noise of the readings |
+| `offset` | `value` | multimeter, oscilloscope: added to every reading |
+| `noise` | `sigma` | multimeter (relative), oscilloscope (volts rms): replaces the noise |
+| `no_trigger` | — | oscilloscope: the trigger never fires |
+| `signal` | `channel`, `shape`, `frequency`, `vpp`, `offset`, `duty`, `phase` | oscilloscope: replaces what is at a channel's input, until the faults are cleared |
 
 Faults stay active until cleared or used up (`no_response`, `disconnect` and
 `delay` with a `count`); `*RST` and `*CLS` do not clear them. They belong to

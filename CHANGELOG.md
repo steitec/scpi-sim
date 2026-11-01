@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.6.0 - 2026-11-01
+
+### Added
+
+- **Oscilloscope** (`scpi-sim serve scope`, bench type `scope`, `Oscilloscope`,
+  `Signal`): signals at the inputs (DC, sine, square, triangle, sawtooth), an
+  8-bit converter with clipping and aliasing, a real edge trigger with Auto,
+  Normal and Single, captures that stay on a stopped scope, sample rate and
+  memory depth by timebase and channels on, measurements computed from the
+  samples. `*OPC?` gets no answer while a Single waits for its trigger.
+- **Five oscilloscope profiles** after their programming manuals:
+  `keysight-dsox2024a`, `rigol-ds1054z`, `tektronix-tbs2104b`, `rs-rtb2004`,
+  `siglent-sds1104x-e`. `rigol-ds1054z` was checked with the unmodified
+  `ds1054z` client library over VXI-11; none was checked on real hardware.
+- Binary answers: `@scpi` handlers can return `bytes`, all transports pass them
+  on unchanged, `scpi_sim.instrument.block()` makes an IEEE 488.2 block.
+- `scpi-sim query` reads a binary block by its length and prints its size.
+- Faults `no_trigger` and `signal`; `offset` and `noise` work on oscilloscopes.
+- Bench terminals `<scope>.ch<n>`: a wired channel shows the DC voltage of its net.
+- SCPI headers may contain `_` (`WFMOutpre:BYT_Nr`), `@scpi(..., also=(...))`
+  gives a command further spellings, and numbers accept the prefix `n` (`5NS`).
+- Browser demo: a DS1054Z joins the bench, with a screen that draws the
+  simulator's own samples live, a tour (measuring, binary blocks, clipping, a
+  trigger that hangs `*OPC?`) and three more fault buttons. `examples/profiles/bench.yaml`
+  gains the scope.
+
+### Fixed
+
+- Browser demo: the "What else it does" section was narrowed and indented.
+
 ## 0.5.0 - 2026-10-29
 
 ### Added
