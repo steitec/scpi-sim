@@ -5,7 +5,7 @@
 #   docker run --rm -p 5025-5027:5025-5027 -p 5099:5099 ghcr.io/steitec/scpi-sim
 #   docker run --rm -p 5025-5027:5025-5027 -p 111:111 -p 111:111/udp -p 5098:5098 -p 4880:4880 ghcr.io/steitec/scpi-sim
 #   docker run --rm -p 5025-5028:5025-5028 -v ./bench.yaml:/bench/bench.yaml ghcr.io/steitec/scpi-sim
-FROM python:3.13-slim
+FROM python:3.15-slim
 LABEL org.opencontainers.image.source=https://github.com/steitec/scpi-sim \
       org.opencontainers.image.description="Simulated SCPI lab instruments on raw TCP sockets" \
       org.opencontainers.image.licenses=MIT
