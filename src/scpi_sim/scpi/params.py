@@ -8,7 +8,7 @@ from collections.abc import Collection
 from ..errors import ScpiError
 
 _NUMBER = re.compile(r"([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([A-Za-z]*)")
-_PREFIXES = {"U": 1e-6, "M": 1e-3, "K": 1e3}
+_PREFIXES = {"N": 1e-9, "U": 1e-6, "M": 1e-3, "K": 1e3}
 _KEYWORDS = {"MIN": "minimum", "MINIMUM": "minimum", "MAX": "maximum",
              "MAXIMUM": "maximum", "DEF": "default", "DEFAULT": "default"}
 

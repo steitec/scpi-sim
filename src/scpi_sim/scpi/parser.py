@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from ..errors import ScpiError
 
-_HEADER = re.compile(r"\*[A-Za-z]+\??|[A-Za-z][A-Za-z0-9]*(?::[A-Za-z][A-Za-z0-9]*)*\??")
+_HEADER = re.compile(r"\*[A-Za-z]+\??|[A-Za-z][A-Za-z0-9_]*(?::[A-Za-z][A-Za-z0-9_]*)*\??")
 
 
 @dataclass(frozen=True)

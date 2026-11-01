@@ -66,7 +66,7 @@ def _dup_port(d):
     (lambda d: d["wiring"].append("main main"), "main main"),
     (_dup_port, "5025"),
     (lambda d: d["loads"].update(spare={"type": "resistor", "ohms": 1}), "spare"),
-    (lambda d: d["instruments"]["psu"].update(type="scope"), "scope"),
+    (lambda d: d["instruments"]["psu"].update(type="oven"), "oven"),
     (lambda d: d["instruments"]["psu"].update(colour="red"), "colour"),
     (lambda d: d["instruments"]["psu"].pop("port"), "port"),
     (lambda d: d["loads"]["main"].update(ohms=-1), "main"),

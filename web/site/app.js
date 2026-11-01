@@ -14,12 +14,29 @@ const CHIPS = [
   { label: "Drop to 9 V and measure again", steps: [["psu", "VOLT 9"], ["daq", "MEAS:VOLT:DC? (@101)"]] },
   { label: "Send garbage, read the error queue", steps: [["psu", "FOO"], ["psu", "SYST:ERR?"]] },
 ];
+const SCOPE_CHIPS = [
+  { label: "Measure the sine", steps: [["scope", ":MEAS:ITEM? FREQ,CHAN1"], ["scope", ":MEAS:ITEM? VPP,CHAN1"]] },
+  { label: "Read the waveform, a binary block", steps: [["scope", ":WAV:PRE?"], ["scope", ":WAV:DATA?"]] },
+  { label: "Too sensitive: it clips, Vpp reads wrong", steps: [["scope", ":CHAN1:SCAL 0.1"], ["scope", ":MEAS:ITEM? VPP,CHAN1"]] },
+  { label: "Back to 500 mV/div, 12 V rail on CH2", steps: [["scope", ":CHAN1:SCAL 0.5"], ["scope", ":CHAN2:SCAL 5"], ["scope", ":CHAN2:DISP ON"], ["psu", POWER_ON]] },
+  { label: "Trigger above the signal: the query hangs", steps: [["scope", ":TRIG:EDG:LEV 1.5"], ["scope", ":SING"], ["scope", "*OPC?"]] },
+  { label: "Lower the level: it fires, run again", steps: [["scope", ":TRIG:EDG:LEV 0"], ["scope", "*OPC?"], ["scope", ":RUN"]] },
+];
 const FAULT_TEXT = {
   "daq-no-response": "DAQ will not answer the next query",
   "daq-offset": "DAQ readings are now 0.5 V high",
   "psu-error": "PSU pushed error -222 into its queue",
+  "scope-no-trigger": "the scope's trigger no longer fires",
+  "scope-noise": "the scope's inputs now see 100 mV of noise",
+  "scope-probe-off": "the probe fell off CH1: 0 V at the input",
 };
-const FAULT_BADGE = { no_response: "no response", offset: "offset +0.5 V" };
+const FAULT_BADGE = { no_response: "no response", offset: "offset +0.5 V", no_trigger: "no trigger", noise: "noise",
+                      signal: "probe off" };
+const SCOPE_STATUS = { triggered: "T'D", auto: "AUTO", wait: "WAIT", stop: "STOP" };
+const TRACE_COLORS = { 1: "#f2d648", 2: "#4fd2e8", 3: "#e87fd0", 4: "#5fa8ff" };
+const SCREEN_ROWS = 8;
+const SCREEN_RANGE = 5.2; // divisions above and below center that the screen shows: the converter's whole range
+const LIVE_MS = 300;
 const RELAYS = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110];
 
 const $ = (selector) => document.querySelector(selector);
@@ -34,6 +51,8 @@ let target = "psu";
 let queue = Promise.resolve();
 const history = [];
 let historyAt = 0;
+let busy = 0;
+let scopeVisible = true;
 
 // --- drawing ------------------------------------------------------------------
 
@@ -97,6 +116,101 @@ function render(state) {
     relay.classList.toggle("read", daq.last?.channel === number);
   }
   showBadges("daq", daq);
+  renderScope(state.scope);
+}
+
+function drawScreen(scope) {
+  const canvas = $("#scope-screen");
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.round(canvas.clientWidth * ratio) || canvas.width;
+  const height = Math.round(canvas.clientHeight * ratio) || canvas.height;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const g = canvas.getContext("2d");
+  const yOf = (divisions) => height / 2 - (divisions / SCREEN_RANGE) * (height / 2);
+  g.clearRect(0, 0, width, height);
+
+  // beyond the eight divisions: the headroom a real screen does not show, but the data has
+  g.fillStyle = "rgba(255,255,255,.05)";
+  g.fillRect(0, 0, width, yOf(SCREEN_ROWS / 2));
+  g.fillRect(0, yOf(-SCREEN_ROWS / 2), width, height - yOf(-SCREEN_ROWS / 2));
+
+  g.lineWidth = Math.max(1, ratio * 0.5);
+  g.strokeStyle = "rgba(125,255,181,.16)";
+  g.beginPath();
+  for (let column = 0; column <= scope.columns; column++) {
+    const x = Math.round((column / scope.columns) * width) + 0.5;
+    g.moveTo(x, yOf(SCREEN_ROWS / 2));
+    g.lineTo(x, yOf(-SCREEN_ROWS / 2));
+  }
+  for (let row = -SCREEN_ROWS / 2; row <= SCREEN_ROWS / 2; row++) {
+    const y = Math.round(yOf(row)) + 0.5;
+    g.moveTo(0, y);
+    g.lineTo(width, y);
+  }
+  g.stroke();
+
+  g.lineWidth = 1.5 * ratio;
+  g.lineJoin = "round";
+  for (const trace of scope.traces) {
+    g.strokeStyle = TRACE_COLORS[trace.channel];
+    g.beginPath();
+    trace.divisions.forEach((value, i) => {
+      const x = (i / (trace.divisions.length - 1)) * width;
+      if (i === 0) g.moveTo(x, yOf(value));
+      else g.lineTo(x, yOf(value));
+    });
+    g.stroke();
+  }
+
+  // the trigger: the level on the left, the moment at the top
+  g.fillStyle = TRACE_COLORS[scope.trigger.source];
+  const level = Math.max(-SCREEN_RANGE, Math.min(SCREEN_RANGE, scope.trigger.divisions));
+  const size = 7 * ratio;
+  g.beginPath();
+  g.moveTo(0, yOf(level) - size);
+  g.lineTo(size * 1.4, yOf(level));
+  g.lineTo(0, yOf(level) + size);
+  g.fill();
+  g.fillStyle = "#e7eaee";
+  g.beginPath();
+  g.moveTo(width / 2 - size, 0);
+  g.lineTo(width / 2, size * 1.4);
+  g.lineTo(width / 2 + size, 0);
+  g.fill();
+}
+
+function engineering(value, unit) {
+  const steps = [[1, ""], [1e-3, "m"], [1e-6, "µ"], [1e-9, "n"]];
+  const [factor, prefix] = steps.find(([f]) => Math.abs(value) >= f) ?? steps[steps.length - 1];
+  return `${+(value / factor).toPrecision(3)} ${prefix}${unit}`;
+}
+
+function renderScope(scope) {
+  const status = byTestId("scope-status");
+  status.textContent = SCOPE_STATUS[scope.status];
+  status.dataset.state = scope.status;
+  const channels = scope.traces.map((t) => `CH${t.channel} ${engineering(t.scale, "V")}/div`);
+  const slope = { POS: "↑", NEG: "↓", EITHER: "↕" }[scope.trigger.slope];
+  byTestId("scope-readout").textContent = [
+    ...channels, `${engineering(scope.time_scale, "s")}/div`,
+    `trigger CH${scope.trigger.source} ${slope} ${engineering(scope.trigger.level, "V")}`,
+  ].join("  ·  ");
+  drawScreen(scope);
+  scopeRunning = scope.status !== "stop";
+  showBadges("scope", scope);
+}
+
+// a running scope keeps capturing: redraw while it is on screen, nothing else is going on,
+// and the visitor has not asked for less motion
+let scopeRunning = true;
+function live() {
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (sim && scopeRunning && scopeVisible && !busy && !document.hidden && !still) {
+    enqueue(async () => renderScope(sim.scopeState()));
+  }
 }
 
 function print(text, kind = "") {
@@ -123,6 +237,7 @@ function setTarget(name) {
 }
 
 function send(to, line) {
+  busy++;
   enqueue(async () => {
     print(`${to}> ${line}`, "command");
     const result = await sim.send(to, line);
@@ -135,7 +250,7 @@ function send(to, line) {
       print(result.response, "response");
     }
     render(result.state);
-  });
+  }).finally(() => { busy--; });
 }
 
 function inject(fault) {
@@ -152,11 +267,10 @@ function reset() {
   });
 }
 
-function wire() {
-  const chips = $("#chips");
-  CHIPS.forEach((chip, i) => {
-    const button = el("button", { type: "button", "data-testid": `chip-${i + 1}`, disabled: "" });
-    button.append(el("span", { class: "step" }, String(i + 1)), el("span", {}, chip.label),
+function addChips(parent, list, first) {
+  list.forEach((chip, i) => {
+    const button = el("button", { type: "button", "data-testid": `chip-${first + i}`, disabled: "" });
+    button.append(el("span", { class: "step" }, String(first + i)), el("span", {}, chip.label),
                   el("code", {}, chip.steps.map(([to, line]) => `${to}> ${line}`).join("  ·  ")));
     button.addEventListener("click", () => {
       for (const [to, line] of chip.steps) {
@@ -164,8 +278,13 @@ function wire() {
         send(to, line);
       }
     });
-    chips.append(button);
+    parent.append(button);
   });
+}
+
+function wire() {
+  addChips($("#chips"), CHIPS, 1);
+  addChips($("#scope-chips"), SCOPE_CHIPS, CHIPS.length + 1);
 
   for (const button of document.querySelectorAll("[data-target]")) {
     button.addEventListener("click", () => setTarget(button.dataset.target));
@@ -210,6 +329,9 @@ async function start() {
   document.body.classList.remove("loading");
   status.textContent = "ready – try the buttons below";
   print("# scpi-sim is running in your browser. Pick an instrument and type, or use the buttons.", "note");
+  new IntersectionObserver(([entry]) => { scopeVisible = entry.isIntersecting; }).observe($("#scope-screen"));
+  setInterval(live, LIVE_MS);
+  window.addEventListener("resize", () => enqueue(async () => renderScope(sim.scopeState())));
 }
 
 start();

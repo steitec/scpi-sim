@@ -101,3 +101,80 @@ def test_unknown_target_or_fault(demo):
         demo.send("dmm", "*IDN?")
     with pytest.raises(ValueError):
         demo.inject("nope")
+
+
+# --- the oscilloscope ----------------------------------------------------------------------
+
+
+def test_scope_screen_after_power_on(demo):
+    scope = demo.state()["scope"]
+    assert scope["model"] == "DS1054Z" and scope["columns"] == 12
+    assert scope["status"] == "triggered"
+    (trace,) = scope["traces"]
+    assert trace["channel"] == 1 and trace["scale"] == pytest.approx(0.5)
+    assert len(trace["divisions"]) == 600
+    assert max(trace["divisions"]) == pytest.approx(2.0, abs=0.1)  # 1 V at 500 mV/div
+    assert scope["trigger"] == {"source": 1, "level": 0.0, "slope": "POS", "divisions": 0.0}
+
+
+def test_scope_binary_answer_is_shown_by_its_size(demo):
+    r = demo.send("scope", ":WAV:DATA?")
+    assert r["response"] == "#9000001200<1200 bytes of binary data>"
+    assert r["timeout"] is False
+
+
+def test_scope_long_text_answer_is_shortened(demo):
+    demo.send("scope", ":WAV:FORM ASC")
+    answer = demo.send("scope", ":WAV:DATA?")["response"]
+    assert len(answer) < 450 and answer.endswith(" characters)")
+
+
+def test_scope_tour(demo):
+    assert float(demo.send("scope", ":MEAS:ITEM? FREQ,CHAN1")["response"]) == pytest.approx(1e3, rel=0.01)
+    assert float(demo.send("scope", ":MEAS:ITEM? VPP,CHAN1")["response"]) == pytest.approx(2, abs=0.1)
+
+    demo.send("scope", ":CHAN1:SCAL 0.1")  # clips
+    assert float(demo.send("scope", ":MEAS:ITEM? VPP,CHAN1")["response"]) == pytest.approx(1.02, abs=0.03)
+    demo.send("scope", ":CHAN1:SCAL 0.5")
+
+    demo.send("scope", ":CHAN2:SCAL 5")
+    state = demo.send("scope", ":CHAN2:DISP ON")["state"]["scope"]
+    rail = next(t for t in state["traces"] if t["channel"] == 2)
+    assert abs(sum(rail["divisions"]) / 600) < 0.1  # the supply is off
+    state = demo.send("psu", POWER_ON)["state"]["scope"]
+    rail = next(t for t in state["traces"] if t["channel"] == 2)
+    assert sum(rail["divisions"]) / 600 == pytest.approx(2.4, abs=0.1)  # 12 V at 5 V/div
+
+    demo.send("scope", ":TRIG:EDG:LEV 1.5")
+    assert demo.send("scope", ":SING")["state"]["scope"]["status"] == "wait"
+    assert demo.send("scope", "*OPC?")["timeout"] is True
+    demo.send("scope", ":TRIG:EDG:LEV 0")
+    assert demo.send("scope", "*OPC?")["response"] == "1"
+    assert demo.send("scope", ":RUN")["state"]["scope"]["status"] == "triggered"
+
+
+@pytest.mark.parametrize("fault, kind", [("scope-no-trigger", "no_trigger"), ("scope-noise", "noise"),
+                                         ("scope-probe-off", "signal")])
+def test_scope_faults_and_reset(demo, fault, kind):
+    state = demo.inject(fault)["scope"]
+    assert state["faults"] == [kind]
+    state = demo.reset()["scope"]
+    assert state["faults"] == [] and state["status"] == "triggered"
+    assert state["time_scale"] == pytest.approx(2e-4)  # the demo's setup, not the 1 us/div of *RST
+
+
+def test_scope_fault_effects(demo):
+    assert demo.inject("scope-no-trigger")["scope"]["status"] == "auto"
+    demo.reset()
+    (trace,) = demo.inject("scope-probe-off")["scope"]["traces"]
+    assert max(map(abs, trace["divisions"])) < 0.3
+    demo.reset()
+    (trace,) = demo.inject("scope-noise")["scope"]["traces"]
+    assert max(trace["divisions"]) > 2.2
+
+
+def test_scope_state_survives_rst_by_hand(demo):
+    state = demo.send("scope", "*RST")["state"]["scope"]
+    assert state["time_scale"] == pytest.approx(1e-6)
+    demo.send("scope", ":CHAN1:DISP OFF")
+    assert demo.state()["scope"]["traces"] == []

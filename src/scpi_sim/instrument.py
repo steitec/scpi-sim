@@ -13,7 +13,7 @@ from typing import Callable, ClassVar
 
 from . import __version__
 from .errors import ScpiError
-from .faults import validate as validate_fault
+from .faults import INSTRUMENT_SPECIFIC_FAULTS, validate as validate_fault
 from .scpi.params import format_number, parse_number
 from .scpi.parser import parse_message
 from .scpi.pattern import HeaderPattern
@@ -36,22 +36,35 @@ class Call:
         return self.args[i] if i < len(self.args) else default
 
 
-def scpi(pattern: str, max_args: int | None = None) -> Callable:
+def scpi(pattern: str, max_args: int | None = None, also: tuple[str, ...] = ()) -> Callable:
     """Register a method as the handler for a SCPI header pattern.
 
     More than ``max_args`` parameters give -108; the default is 0 for a query
-    and 1 for a setting command.
+    and 1 for a setting command. ``also``: further patterns for the same command,
+    for spellings the keyword syntax cannot express (Siglent: ``VOLT_DIV``/``VDIV``).
     """
     def decorate(method: Callable) -> Callable:
         method._scpi_pattern = HeaderPattern(pattern)
+        method._scpi_also = tuple(HeaderPattern(p) for p in also)
         method._scpi_max_args = max_args if max_args is not None else (0 if pattern.endswith("?") else 1)
         return method
     return decorate
 
 
-def _format(value, number: Callable[[float], str] = format_number) -> str | None:
-    if value is None:
-        return None
+def wire_bytes(response: str | bytes) -> bytes:
+    """What goes on the wire for a response of ``Instrument.process()``, without the terminator."""
+    return response if isinstance(response, bytes) else response.encode()
+
+
+def block(data: bytes) -> bytes:
+    """An IEEE 488.2 definite length block: ``#<n><length><data>``."""
+    length = str(len(data))
+    return f"#{len(length)}{length}".encode() + data
+
+
+def _format(value, number: Callable[[float], str] = format_number) -> str | bytes | None:
+    if value is None or isinstance(value, bytes):
+        return value
     if isinstance(value, bool):
         return "1" if value else "0"
     if isinstance(value, int):
@@ -97,7 +110,8 @@ class Instrument:
                 seen.add(name)
                 pattern = getattr(attr, "_scpi_pattern", None)
                 if pattern is not None:
-                    commands.append((pattern, name, attr._scpi_max_args))
+                    for each in (pattern, *attr._scpi_also):
+                        commands.append((each, name, attr._scpi_max_args))
         cls._commands = commands
 
     def __init__(self, *, serial: str | None = None) -> None:
@@ -135,7 +149,7 @@ class Instrument:
 
     def inject(self, kind: str, **params) -> None:
         """Arm a fault (see scpi_sim.faults); raises ValueError for bad input."""
-        if kind in ("offset", "noise") and kind not in self.SPECIFIC_FAULTS:
+        if kind in INSTRUMENT_SPECIFIC_FAULTS and kind not in self.SPECIFIC_FAULTS:
             raise ValueError(f"fault {kind!r} is not supported by the {self.model}")
         params = validate_fault(kind, params)
         with self._lock:
@@ -167,8 +181,8 @@ class Instrument:
                     del self._faults[kind]
             return dict(params)
 
-    def process(self, line: str) -> str | None:
-        """Execute one program message; return the joined query responses."""
+    def process(self, line: str) -> str | bytes | None:
+        """Execute one program message; return the joined query responses (bytes if one is binary)."""
         responses = []
         with self._lock:
             for command in parse_message(line):
@@ -192,9 +206,13 @@ class Instrument:
                 listener()
             except Exception:  # listeners report their own problems
                 pass
-        return ";".join(responses) if responses else None
+        if not responses:
+            return None
+        if any(isinstance(response, bytes) for response in responses):
+            return b";".join(wire_bytes(response) for response in responses)
+        return ";".join(responses)
 
-    def _dispatch(self, header: tuple[str, ...], is_query: bool, args: tuple[str, ...]) -> str | None:
+    def _dispatch(self, header: tuple[str, ...], is_query: bool, args: tuple[str, ...]) -> str | bytes | None:
         for pattern, name, max_args in self._commands:
             suffixes = pattern.match(header, is_query)
             if suffixes is not None:

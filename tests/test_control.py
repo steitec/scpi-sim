@@ -1,6 +1,7 @@
 import json
 import socket
 
+import pytest
 import yaml
 
 from helpers import BASIC
@@ -97,3 +98,21 @@ def test_text_parameter_stays_text():
     with bench_with_control() as b:
         assert send_control({"instrument": "dmm", "inject": "idn", "params": {"value": None}},
                             port=b.control_port)["ok"] is False
+
+
+def test_scope_faults_through_the_control_port():
+    bench = Bench.from_dict({"instruments": {"scope": {"type": "scope", "port": 0, "noise": 0, "seed": 1}}, "control": 0})
+    with bench:
+        answer = send_control({"instrument": "scope", "inject": "signal",
+                               "params": {"channel": "1", "shape": "square", "frequency": "5000", "vpp": "2"}},
+                              port=bench.control_port)
+        assert answer == {"ok": True}
+        scope = bench.instruments["scope"]
+        scope.process(":TIM:SCAL 1e-4")
+        assert float(scope.process(":MEAS:FREQ?")) == pytest.approx(5000, rel=0.01)
+        assert send_control({"instrument": "scope", "inject": "no_trigger"}, port=bench.control_port)["ok"]
+        listed = send_control({"list": True}, port=bench.control_port)["faults"]["scope"]
+        assert set(listed) == {"signal", "no_trigger"}
+        bad = send_control({"instrument": "scope", "inject": "signal", "params": {"channel": "9"}},
+                           port=bench.control_port)
+        assert not bad["ok"] and "no channel 9" in bad["error"]
