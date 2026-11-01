@@ -183,6 +183,7 @@ function drawScreen(scope) {
 }
 
 function engineering(value, unit) {
+  if (value === 0) return `0 ${unit}`;
   const steps = [[1, ""], [1e-3, "m"], [1e-6, "µ"], [1e-9, "n"]];
   const [factor, prefix] = steps.find(([f]) => Math.abs(value) >= f) ?? steps[steps.length - 1];
   return `${+(value / factor).toPrecision(3)} ${prefix}${unit}`;

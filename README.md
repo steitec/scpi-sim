@@ -21,7 +21,7 @@ Rohde & Schwarz, Keysight, Keithley, Siglent, Rigol and Tektronix, so code writt
 instruments runs unchanged.
 
 **Try it in your browser:** <https://scpi-sim.steitec.net>, a simulated power
-supply wired to a DAQ, running the real simulator in the page.
+supply wired to a DAQ and an oscilloscope, running the real simulator in the page.
 Walkthroughs, CI recipes and troubleshooting are in the
 [wiki](https://github.com/steitec/scpi-sim/wiki); this README is the reference.
 

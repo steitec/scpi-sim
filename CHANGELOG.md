@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.6.0 - 2026-11-01
 
 ### Added
 
@@ -25,6 +25,14 @@ All notable changes to this project are documented here. The format follows
 - Bench terminals `<scope>.ch<n>`: a wired channel shows the DC voltage of its net.
 - SCPI headers may contain `_` (`WFMOutpre:BYT_Nr`), `@scpi(..., also=(...))`
   gives a command further spellings, and numbers accept the prefix `n` (`5NS`).
+- Browser demo: a DS1054Z joins the bench, with a screen that draws the
+  simulator's own samples live, a tour (measuring, binary blocks, clipping, a
+  trigger that hangs `*OPC?`) and three more fault buttons. `examples/profiles/bench.yaml`
+  gains the scope.
+
+### Fixed
+
+- Browser demo: the "What else it does" section was narrowed and indented.
 
 ## 0.5.0 - 2026-10-29
 

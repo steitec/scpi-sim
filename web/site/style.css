@@ -112,7 +112,7 @@ code { font-family: var(--mono); font-size: .92em; }
 .badge.trig { border-color: var(--led-on); color: var(--led-on); }
 .badge.trig[data-state="wait"] { border-color: var(--fault); color: var(--fault); }
 .badge.trig[data-state="stop"] { border-color: var(--err); color: var(--err); }
-#scope-screen { display: block; width: 100%; height: auto; aspect-ratio: 60 / 52; border-radius: 4px; background: #07100d; }
+#scope-screen { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; border-radius: 4px; background: #07100d; }
 .readout { margin: 8px 0 0; color: var(--panel-muted); font: 12px/1.4 var(--mono); overflow-wrap: anywhere; }
 
 .powering { display: none; position: absolute; inset: auto 0 0 0; margin: 0; padding: 6px; text-align: center; font: 12px/1 var(--mono); color: var(--panel-muted); }

@@ -181,6 +181,7 @@ test("the scope draws what the simulator captured", async ({ page }) => {
   await expect(id(page, "scope-status")).toHaveText("T'D");
   await expect(id(page, "scope-readout")).toContainText("CH1 500 mV/div");
   await expect(id(page, "scope-readout")).toContainText("200 µs/div");
+  await expect(id(page, "scope-readout")).toContainText("trigger CH1 ↑ 0 V");
   expect(await pixels(page, CH1)).toBeGreaterThan(500);
   expect(await pixels(page, CH2)).toBeLessThan(100); // only the trigger marker's neighbours at most
 });
