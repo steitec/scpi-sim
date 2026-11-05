@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.7.1 - 2026-11-05
+
+### Fixed
+
+- `examples/power_on`: a test read the current from a single sample and failed now
+  and then because of the scope's noise. It averages now. The package itself is the
+  same as 0.7.0, which never reached PyPI because this test stopped its release run.
+
 ## 0.7.0 - 2026-11-05
 
 ### Added
