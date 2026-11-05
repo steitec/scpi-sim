@@ -44,6 +44,9 @@ from .scope_measure import measure
 NO_VALUE = 9.9e37
 SHAPES = ("dc", "sine", "square", "triangle", "sawtooth")
 _NOISE_POINTS = 1 << 16
+# How far apart two readings of the clock can be and still look equal: up to 16 ms on
+# Windows. An event in the same tick as a look at it must still count as after that look.
+_CLOCK_TICK = time.get_clock_info("monotonic").resolution
 _SI = {"n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3, "M": 1e6, "G": 1e9}
 
 
@@ -335,7 +338,7 @@ class ScopeEngine(Instrument):
         self._status = "auto"  # triggered, auto, wait or stop
         self._capture: Capture | None = None
         self._new_acquisition = False  # read by event registers
-        self._seen_until = time.monotonic()  # edges of a Transient before this are over
+        self._seen_until = time.monotonic() - _CLOCK_TICK  # edges of a Transient before this are over
 
     def channel(self, suffix: int | None) -> _Channel:
         return self.channels[self.channel_number(suffix)]
@@ -483,7 +486,7 @@ class ScopeEngine(Instrument):
             level -= self._faults["offset"]["value"] if "offset" in self._faults else 0.0
             level += signal.mean if channel.coupling == "AC" else 0.0
             edge = signal.crossing(level, self.trigger_slope, self._seen_until, now)
-        self._seen_until = now if edge is None else edge
+        self._seen_until = max(self._seen_until, now - _CLOCK_TICK) if edge is None else edge
         return edge
 
     def _free_run_delay(self) -> float:
@@ -533,7 +536,7 @@ class ScopeEngine(Instrument):
 
     def run(self) -> None:
         if self._state == "stop":
-            self._seen_until = time.monotonic()  # a stopped scope saw nothing
+            self._seen_until = time.monotonic() - _CLOCK_TICK  # a stopped scope saw nothing
         self._state = "run"
 
     def stop(self) -> None:
@@ -541,7 +544,7 @@ class ScopeEngine(Instrument):
         self._state = "stop"
 
     def single(self) -> None:
-        self._seen_until = time.monotonic()  # only what happens from now on
+        self._seen_until = time.monotonic() - _CLOCK_TICK  # only what happens from now on
         self._state = "single"
         self.poll()
 

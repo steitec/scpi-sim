@@ -25,11 +25,19 @@ def trace(s, count=1000, number=1):
     return s.read_volts(capture, number, 0, count, capture.window / count), capture
 
 
+def wait(seconds=0.0):
+    """Let the clock move on by at least ``seconds`` and two ticks: it is coarse on Windows."""
+    tick = time.get_clock_info("monotonic").resolution
+    end = time.monotonic() + seconds + 2 * tick
+    while time.monotonic() <= end:
+        time.sleep(0.0005)
+
+
 def event(*points, ripple=None):
     """A transient that has just finished: its edges lie between the last look and now."""
-    time.sleep(0.001)
+    wait()
     transient = Transient(start=time.monotonic(), points=points or RAMP, ripple=ripple)
-    time.sleep(transient.duration + 0.001)
+    wait(transient.duration)
     return transient
 
 
@@ -106,7 +114,7 @@ def test_event_before_arming_does_not_trigger():
     s = armed()
     old = event()
     s.inputs[1] = lambda: old
-    time.sleep(0.002)
+    wait()
     s.process(":SING")
     assert s.process("*OPC?") is None
 
@@ -289,7 +297,7 @@ def test_single_catches_the_power_on_of_a_device(bench):
     s.process(":CHAN1:SCAL 1;:CHAN1:OFFS 2.5;:TIM:SCAL 5e-4;:TRIG:LEV 2.5;:SING")
     assert s.process("*OPC?") is None
     psu.process("VOLT 5;CURR 1;:OUTP ON")
-    time.sleep(0.002)
+    wait(0.001)
     assert s.process("*OPC?") == "1"
     volts, capture = trace(s)
     assert capture.triggered
@@ -319,3 +327,26 @@ def test_wrong_waveform_type_is_an_instrument_error():
     s = bench.instruments["scope"]
     assert s.process(":MEAS:VAV?") is None
     assert s.process("SYST:ERR?").startswith("-300")
+
+
+def test_event_in_the_same_clock_tick_as_arming_counts():
+    s = armed()
+    s.process(":SING")
+    # what a coarse clock does: the event starts at the very reading the scope took when it looked
+    tick = time.get_clock_info("monotonic").resolution
+    same_tick = Transient(start=s._seen_until + tick / 2, points=((0, 0), (0, 12)))
+    s.inputs[1] = lambda: same_tick
+    wait()
+    assert s.process("*OPC?") == "1"
+
+
+def test_an_edge_triggers_only_once():
+    s = armed()
+    s.process(":TRIG:SWE NORM")
+    up = event()
+    s.inputs[1] = lambda: up
+    _, first = trace(s)
+    s.process(":SING")
+    wait()
+    assert s.process("*OPC?") is None  # the event is over: a new Single waits for a new one
+    assert first.triggered
