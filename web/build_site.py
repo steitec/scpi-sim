@@ -74,7 +74,8 @@ def build(out: Path) -> None:
     py = out / "py"
     py.mkdir()
     shutil.copy2(WEB / "py" / "demo.py", py)
-    shutil.copy2(ROOT / "examples" / "profiles" / "bench.yaml", py)
+    shutil.copy2(WEB / "py" / "bench.yaml", py)
+    shutil.copy2(ROOT / "examples" / "power_on" / "power_board.py", py)
     wheel = build_wheel(py)
     version = wheel.name.split("-")[1]
     manifest = {"wheel": wheel.name, "version": version, "pyodide": PYODIDE_VERSION}

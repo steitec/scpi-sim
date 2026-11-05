@@ -90,6 +90,11 @@ class Device:
         """Volts driven on output ``terminal``; None leaves the net floating."""
         return None
 
+    def waveform(self, terminal: str):
+        """What an oscilloscope sees on output ``terminal``: a ``Signal``, a ``Transient``,
+        or None for the DC value of ``voltage()``. Instruments other than a scope read ``voltage()``."""
+        return None
+
     def update(self) -> None:
         """Something on the bench may have changed (called after every instrument message)."""
 

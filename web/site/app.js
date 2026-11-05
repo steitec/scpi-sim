@@ -21,6 +21,12 @@ const SCOPE_CHIPS = [
   { label: "Back to 500 mV/div, 12 V rail on CH2", steps: [["scope", ":CHAN1:SCAL 0.5"], ["scope", ":CHAN2:SCAL 5"], ["scope", ":CHAN2:DISP ON"], ["psu", POWER_ON]] },
   { label: "Trigger above the signal: the query hangs", steps: [["scope", ":TRIG:EDG:LEV 1.5"], ["scope", ":SING"], ["scope", "*OPC?"]] },
   { label: "Lower the level: it fires, run again", steps: [["scope", ":TRIG:EDG:LEV 0"], ["scope", "*OPC?"], ["scope", ":RUN"]] },
+  { label: "Catch a board's power-on: inrush on CH3, 3.3 V rail on CH4",
+    steps: [["psu", "INST OUT3; VOLT 12; CURR 3; OUTP:SEL OFF"],
+            ["scope", ":CHAN1:DISP OFF;:CHAN2:DISP OFF;:CHAN3:DISP ON;:CHAN3:SCAL 0.05;:CHAN3:OFFS -0.15;:CHAN4:DISP ON;:CHAN4:SCAL 1;:CHAN4:OFFS -2"],
+            ["scope", ":TIM:SCAL 0.002;:TIM:OFFS 0.008;:TRIG:EDG:SOUR CHAN3;:TRIG:EDG:LEV 0.02;:SING"],
+            ["psu", "OUTP:SEL ON;:OUTP:GEN ON"]] },
+  { label: "Read the inrush peak (100 mV/A) and the rail", steps: [["scope", ":MEAS:ITEM? VMAX,CHAN3"], ["scope", ":MEAS:ITEM? VMAX,CHAN4"]] },
 ];
 const FAULT_TEXT = {
   "daq-no-response": "DAQ will not answer the next query",

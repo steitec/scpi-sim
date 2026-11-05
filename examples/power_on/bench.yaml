@@ -1,0 +1,14 @@
+# A board's power-on on an oscilloscope: inrush current and rail ramp.
+#
+#   scpi-sim serve --bench examples/power_on/bench.yaml
+#   pytest examples/power_on --scpi-bench examples/power_on/bench.yaml
+instruments:
+  psu: {type: psu, port: 5025}
+  scope: {type: scope, port: 5026}
+devices:
+  board:
+    class: "power_board:PowerBoard"     # examples/power_on/power_board.py
+wiring:
+  - psu.ch1 -> board.vin
+  - scope.ch1 -> board.isense           # a 100 mV/A current probe
+  - scope.ch2 -> board.3V3

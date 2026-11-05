@@ -42,7 +42,7 @@ async function load(onStatus) {
   onStatus("loading scpi-sim…");
   await pyodide.loadPackage("pyyaml", { messageCallback: () => {} });
   await pyodide.loadPackage(new URL(`py/${manifest.wheel}`, base).href, { messageCallback: () => {} });
-  for (const name of ["demo.py", "bench.yaml"]) {
+  for (const name of ["demo.py", "bench.yaml", "power_board.py"]) {
     const data = new Uint8Array(await (await fetchOk(`py/${name}`)).arrayBuffer());
     pyodide.FS.writeFile(name, data);
   }

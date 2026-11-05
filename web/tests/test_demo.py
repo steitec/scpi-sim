@@ -8,11 +8,15 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "web" / "py"))
+sys.path.insert(0, str(ROOT / "examples" / "power_on"))  # build_site.py puts power_board.py next to the bench
 
 from demo import Demo  # noqa: E402
 
-BENCH = ROOT / "examples" / "profiles" / "bench.yaml"
+BENCH = ROOT / "web" / "py" / "bench.yaml"
 POWER_ON = "INST OUT1; VOLT 12; OUTP:SEL ON;:OUTP:GEN ON"  # ";:" back to the root
+SCOPE_POWER_SETUP = (":CHAN1:DISP OFF;:CHAN2:DISP OFF;:CHAN3:DISP ON;:CHAN3:SCAL 0.05;:CHAN3:OFFS -0.15;"
+                     ":CHAN4:DISP ON;:CHAN4:SCAL 1;:CHAN4:OFFS -2;:TIM:SCAL 0.002;:TIM:OFFS 0.008;"
+                     ":TRIG:EDG:SOUR CHAN3;:TRIG:EDG:LEV 0.02")
 
 
 @pytest.fixture
@@ -178,3 +182,23 @@ def test_scope_state_survives_rst_by_hand(demo):
     assert state["time_scale"] == pytest.approx(1e-6)
     demo.send("scope", ":CHAN1:DISP OFF")
     assert demo.state()["scope"]["traces"] == []
+
+
+def test_power_on_chip_catches_the_board(demo):
+    demo.send("psu", "INST OUT3; VOLT 12; CURR 3; OUTP:SEL OFF")
+    demo.send("scope", SCOPE_POWER_SETUP)
+    assert demo.send("scope", ":SING")["state"]["scope"]["status"] == "wait"
+    r = demo.send("psu", "OUTP:SEL ON;:OUTP:GEN ON")
+    assert r["state"]["scope"]["status"] == "stop"
+    traces = {trace["channel"]: trace["divisions"] for trace in r["state"]["scope"]["traces"]}
+    assert set(traces) == {3, 4}
+    assert float(demo.send("scope", ":MEAS:ITEM? VMAX,CHAN3")["response"]) == pytest.approx(0.22, abs=0.01)
+    assert float(demo.send("scope", ":MEAS:ITEM? VMAX,CHAN4")["response"]) == pytest.approx(3.3, abs=0.1)
+    assert traces[4][0] < traces[4][-1]  # the rail comes up on the screen
+    assert demo.reset()["scope"]["status"] != "stop"
+
+
+def test_power_board_is_in_the_build():
+    text = (ROOT / "web" / "build_site.py").read_text(encoding="utf-8")
+    assert "power_board.py" in text
+    assert "power_board.py" in (ROOT / "web" / "site" / "sim.js").read_text(encoding="utf-8")
