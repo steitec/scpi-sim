@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scpi-sim"
-version = "0.6.0"
+version = "0.7.0"
 description = "Simulated SCPI lab instruments (DMM, power supply, multiplexer, oscilloscope) over raw TCP, VXI-11 and HiSLIP"
 readme = "README.md"
 license = "MIT"

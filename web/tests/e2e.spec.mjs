@@ -237,6 +237,7 @@ test("scope faults and the terminal", async ({ page }) => {
 test("a running scope keeps capturing, a stopped one does not", async ({ page }) => {
   await ready(page);
   await id(page, "fault-scope-noise").click();
+  await id(page, "scope-screen").scrollIntoViewIfNeeded(); // it only redraws while it is on screen
   const frame = () => id(page, "scope-screen").evaluate((canvas) => canvas.toDataURL());
   await expect.poll(async () => {
     const first = await frame();
@@ -250,4 +251,16 @@ test("a running scope keeps capturing, a stopped one does not", async ({ page })
   const stopped = await frame();
   await page.waitForTimeout(700);
   expect(await frame()).toBe(stopped);
+});
+
+test("catching a board's power-on", async ({ page }) => {
+  await ready(page);
+  await id(page, "chip-13").click();
+  await expect(id(page, "scope-status")).toHaveAttribute("data-state", "stop");
+  await expect(id(page, "scope-readout")).toContainText("CH3");
+  await expect(id(page, "scope-readout")).toContainText("CH4");
+  await expect(id(page, "scope-readout")).toContainText("2 ms/div");
+  await id(page, "chip-14").click();
+  await expect(id(page, "terminal-output")).toContainText(/2\.[0-9]+e-01/); // 0.22 V at 100 mV/A: 2.2 A
+  await expect(id(page, "terminal-output")).toContainText(/3\.[0-9]+e\+00/);
 });

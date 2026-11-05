@@ -1,8 +1,8 @@
 # Browser demo
 
-The interactive demo at <https://scpi-sim.steitec.net>: the example bench from
-`examples/profiles/bench.yaml` (R&S HMP4040 supply, Keysight DAQ970A, Rigol
-DS1054Z oscilloscope) running
+The interactive demo at <https://scpi-sim.steitec.net>: `py/bench.yaml`, the example
+bench from `examples/profiles/bench.yaml` (R&S HMP4040 supply, Keysight DAQ970A, Rigol
+DS1054Z oscilloscope) plus the board from `examples/power_on`, running
 in the browser. The real scpi-sim code runs in [Pyodide](https://pyodide.org);
 the site is static, with no backend and no requests to other hosts.
 

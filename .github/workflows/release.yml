@@ -29,6 +29,7 @@ jobs:
       - run: pytest -v examples/test_example.py --scpi-bench examples/bench.yaml
       - run: pytest -v examples/devices --scpi-bench examples/devices/bench.yaml
       - run: pytest -v examples/profiles --scpi-bench examples/profiles/bench.yaml
+      - run: pytest -v examples/power_on --scpi-bench examples/power_on/bench.yaml
 
   build:
     needs: [test]

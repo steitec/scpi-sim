@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.7.0 - 2026-11-05
+
+### Added
+
+- **Waveforms from devices.** `Device.waveform(terminal)` says what an oscilloscope
+  sees on an output: a `Signal` (ripple on a rail, a clock) or a `Transient`, a one-shot
+  shape of straight lines with optional ripple once it has settled. Without
+  `waveform()`, a wired channel shows the DC value of `voltage()`, as before.
+- The trigger finds the edges of a `Transient` exactly. Single catches only what
+  happens after arming, Normal fires again on each new event, Auto shows the latest
+  samples. A capture keeps its event when the input changes later.
+- `examples/power_on`: a board with inrush current, a CPU load step, a rail ramp and
+  ripple, and a pytest suite that checks them through the scope.
+- Browser demo: that board on channel 3 of the supply, and a tour step that catches
+  its power-on.
+
+### Limits
+
+- A capture is computed when the trigger fires, so the part of it after the trigger
+  is what the device said would happen. Switching off right after the trigger does
+  not cut it short.
+- A channel wired to a supply output directly still shows only its DC voltage.
+- A device has one latest `Transient` per output; an event replaced before the scope
+  looked at it again is gone.
+
 ## 0.6.0 - 2026-11-01
 
 ### Added

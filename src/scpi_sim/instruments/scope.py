@@ -18,6 +18,10 @@ What makes it behave like a real scope:
   in the same way.
 
 Captures are lazy: a 24 Mpoint record costs nothing until a part of it is read.
+
+An input is a ``Signal``, which repeats forever, or a ``Transient``, which happens
+once: a device's power-on, say. A Transient lives on the clock of ``time.monotonic()``,
+so a scope armed with Single catches it only if it happens after arming.
 """
 
 from __future__ import annotations
@@ -26,6 +30,8 @@ import math
 import random
 import re
 import struct
+import time
+from bisect import bisect_right
 from dataclasses import dataclass, field, replace
 from typing import Callable, ClassVar
 
@@ -95,6 +101,90 @@ class Signal:
                 return offset + half * (1 - 2 * (p - duty) / edge)
             return offset - half
         return square
+
+
+@dataclass(frozen=True)
+class Transient:
+    """A one-shot waveform: straight lines between ``points``, ``(seconds after start, volts)``.
+
+    ``start`` is the ``time.monotonic()`` of the event. Before the first point the
+    signal has the first value, after the last point the last value. Two points at
+    the same time are a step. ``ripple`` is added once the shape has settled, after
+    the last point; the trigger does not see it.
+    """
+
+    start: float
+    points: tuple[tuple[float, float], ...]
+    ripple: Signal | None = None
+
+    def __post_init__(self) -> None:
+        points = tuple((float(t), float(v)) for t, v in self.points)
+        object.__setattr__(self, "points", points)
+        if not points:
+            raise ValueError("a transient needs at least one point")
+        if not all(math.isfinite(t) and math.isfinite(v) for t, v in points):
+            raise ValueError("transient points must be finite numbers")
+        if points[0][0] < 0 or any(a[0] > b[0] for a, b in zip(points, points[1:])):
+            raise ValueError("transient times must start at 0 or later and must not go back")
+
+    shape: ClassVar[str] = "transient"
+
+    @property
+    def vpp(self) -> float:
+        values = [v for _, v in self.points]
+        return max(values) - min(values)
+
+    @property
+    def offset(self) -> float:
+        """The middle of the swing."""
+        values = [v for _, v in self.points]
+        return (max(values) + min(values)) / 2
+
+    @property
+    def mean(self) -> float:
+        """Where the signal settles: what AC coupling takes away."""
+        return self.points[-1][1] + (self.ripple.mean if self.ripple else 0.0)
+
+    @property
+    def duration(self) -> float:
+        return self.points[-1][0] - self.points[0][0]
+
+    def at(self, seconds: float) -> float:
+        """The value ``seconds`` after the start, without the ripple."""
+        return self._line([t for t, _ in self.points], [v for _, v in self.points])(seconds)
+
+    @staticmethod
+    def _line(times: list[float], values: list[float]) -> Callable[[float], float]:
+        last = len(times)
+
+        def line(t: float) -> float:
+            i = bisect_right(times, t)
+            if i == 0:
+                return values[0]
+            if i == last:
+                return values[-1]
+            t0, v0, t1, v1 = times[i - 1], values[i - 1], times[i], values[i]
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+        return line
+
+    def sampler(self) -> Callable[[float], float]:
+        """A fast function of ``time.monotonic()`` time."""
+        start = self.start
+        line = self._line([t for t, _ in self.points], [v for _, v in self.points])
+        if self.ripple is None:
+            return lambda t: line(t - start)
+        ripple, settled = self.ripple.sampler(), start + self.points[-1][0]
+        return lambda t: line(t - start) + (ripple(t) if t >= settled else 0.0)
+
+    def crossing(self, level: float, slope: str, after: float, until: float) -> float | None:
+        """The first time in ``after < t <= until`` the shape goes through ``level``."""
+        for (t0, v0), (t1, v1) in zip(self.points, self.points[1:]):
+            rising, falling = v0 < level <= v1, v0 >= level > v1
+            if (rising and slope != "NEG") or (falling and slope != "POS"):
+                t = self.start + t0 + (level - v0) / (v1 - v0) * (t1 - t0)
+                if after < t <= until:
+                    return t
+        return None
 
 
 def _si_number(text: str) -> float:
@@ -224,8 +314,8 @@ class ScopeEngine(Instrument):
                 raise ValueError(f"channel {channel} does not exist (the {self.model} has {self.CHANNELS})")
             self.signals[channel] = signal
         self._overrides: dict[int, Signal] = {}
-        # what is wired to a channel on a bench: channel -> function returning the net's volts
-        self.inputs: dict[int, Callable[[], float]] = {}
+        # what is wired to a channel on a bench: channel -> function returning volts or a waveform
+        self.inputs: dict[int, Callable[[], float | Signal | Transient]] = {}
         self.reset()
 
     # --- settings ------------------------------------------------------------------
@@ -245,6 +335,7 @@ class ScopeEngine(Instrument):
         self._status = "auto"  # triggered, auto, wait or stop
         self._capture: Capture | None = None
         self._new_acquisition = False  # read by event registers
+        self._seen_until = time.monotonic()  # edges of a Transient before this are over
 
     def channel(self, suffix: int | None) -> _Channel:
         return self.channels[self.channel_number(suffix)]
@@ -299,12 +390,20 @@ class ScopeEngine(Instrument):
 
     # --- what is at the inputs ------------------------------------------------------
 
-    def input_signal(self, number: int) -> Signal:
+    def input_signal(self, number: int) -> Signal | Transient:
         if number in self._overrides:
             return self._overrides[number]
-        if number in self.inputs:  # wired on a bench: the net's DC voltage
-            return Signal(offset=float(self.inputs[number]()))
-        return self.signals[number]
+        if number not in self.inputs:
+            return self.signals[number]
+        value = self.inputs[number]()  # wired on a bench
+        if isinstance(value, (Signal, Transient)):
+            return value
+        if isinstance(value, (int, float)):
+            return Signal(offset=float(value))
+        raise TypeError(f"channel {number}: expected volts, a Signal or a Transient, not {type(value).__name__}")
+
+    def _has_transient(self) -> bool:
+        return any(isinstance(self.input_signal(number), Transient) for number in self.inputs)
 
     def _sampler(self, number: int) -> Callable[[float], float]:
         channel = self.channels[number]
@@ -312,9 +411,13 @@ class ScopeEngine(Instrument):
         added = self._faults["offset"]["value"] if "offset" in self._faults else 0.0
         if channel.coupling == "GND":
             return lambda t: 0.0
-        if channel.coupling == "AC":
-            signal = replace(signal, offset=signal.offset - signal.mean)
-        sampler = signal.sampler()
+        if channel.coupling == "AC" and isinstance(signal, Transient):
+            shape, settled = signal.sampler(), signal.mean
+            sampler = lambda t: shape(t) - settled  # noqa: E731
+        else:
+            if channel.coupling == "AC":
+                signal = replace(signal, offset=signal.offset - signal.mean)
+            sampler = signal.sampler()
         return (lambda t: sampler(t) + added) if added else sampler
 
     def inject(self, kind: str, **params) -> None:
@@ -342,12 +445,16 @@ class ScopeEngine(Instrument):
         if "no_trigger" in self._faults:
             return None
         signal = self.input_signal(self.trigger_source)
+        if isinstance(signal, Transient):
+            return self._transient_edge(signal)
         if signal.shape == "dc" or signal.vpp == 0:
             return None
         f = self._sampler(self.trigger_source)
         level, slope, period = self.trigger_level, self.trigger_slope, 1 / signal.frequency
         steps = 2048
-        start = 0.37 * period / steps  # off the grid: a sine through the level at t = 0 has no sign change there
+        # off the grid: a sine through the level at t = 0 has no sign change there.
+        # A Transient on another channel needs the same clock.
+        start = (time.monotonic() if self._has_transient() else 0.0) + 0.37 * period / steps
         previous = f(start) - level
         for i in range(1, steps + 2):
             t = start + i * period / steps
@@ -365,6 +472,26 @@ class ScopeEngine(Instrument):
                 return high
             previous = now
         return None
+
+    def _transient_edge(self, signal: Transient) -> float | None:
+        """Time of the first edge since the last look; nothing before that can trigger again."""
+        now = time.monotonic()
+        channel = self.channels[self.trigger_source]
+        edge = None
+        if channel.coupling != "GND":
+            level = self.trigger_level
+            level -= self._faults["offset"]["value"] if "offset" in self._faults else 0.0
+            level += signal.mean if channel.coupling == "AC" else 0.0
+            edge = signal.crossing(level, self.trigger_slope, self._seen_until, now)
+        self._seen_until = now if edge is None else edge
+        return edge
+
+    def _free_run_delay(self) -> float:
+        """Signal time at the middle of an untriggered capture. With a Transient: the latest samples."""
+        if self._has_transient():
+            rate, points = self.record()
+            return time.monotonic() - self.time_position - points / rate / 2
+        return self._random.random()
 
     def _take_capture(self, delay: float, triggered: bool) -> None:
         rate, points = self.record()
@@ -389,7 +516,7 @@ class ScopeEngine(Instrument):
                 self._state = "stop"
             return
         if self._state == "run" and self.sweep == "AUTO":
-            self._take_capture(self._random.random(), False)
+            self._take_capture(self._free_run_delay(), False)
             self._status = "auto"
         else:
             self._status = "wait"
@@ -405,6 +532,8 @@ class ScopeEngine(Instrument):
         return self._state != "stop"
 
     def run(self) -> None:
+        if self._state == "stop":
+            self._seen_until = time.monotonic()  # a stopped scope saw nothing
         self._state = "run"
 
     def stop(self) -> None:
@@ -412,13 +541,14 @@ class ScopeEngine(Instrument):
         self._state = "stop"
 
     def single(self) -> None:
+        self._seen_until = time.monotonic()  # only what happens from now on
         self._state = "single"
         self.poll()
 
     def force_trigger(self) -> None:
         """Take a capture now, whatever the trigger says."""
         if self._state != "stop":
-            self._take_capture(self._random.random(), False)
+            self._take_capture(self._free_run_delay(), False)
             self._status = "triggered"
             if self._state == "single":
                 self._state = "stop"
@@ -439,7 +569,8 @@ class ScopeEngine(Instrument):
             number, signal = first
             self.trigger_source, self.trigger_level, self.trigger_slope = number, signal.offset, "POS"
             self.sweep = "AUTO"
-            self.set_time(max(self.TIME_MIN, min(self.TIME_MAX, self._next_up(3 / signal.frequency / self.DIVS_X))))
+            span = signal.duration if isinstance(signal, Transient) else 3 / signal.frequency
+            self.set_time(max(self.TIME_MIN, min(self.TIME_MAX, self._next_up(span / self.DIVS_X))))
             self.time_position = 0.0
         self._state = "run"
 

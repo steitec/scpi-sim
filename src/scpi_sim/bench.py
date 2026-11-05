@@ -431,8 +431,8 @@ class Bench:
         )
         if not valid:
             raise BenchError(f"{where}: unknown terminal {text!r}")
-        if isinstance(instrument, ScopeEngine):  # a wired channel shows the DC voltage of its net
-            instrument.inputs[_scope_channel(pin, instrument)] = lambda: self._net_voltage(text)
+        if isinstance(instrument, ScopeEngine):  # a wired channel shows what drives its net
+            instrument.inputs[_scope_channel(pin, instrument)] = lambda: self._net_waveform(text)
         return text
 
     def _add_wiring(self, lines) -> None:
@@ -505,6 +505,17 @@ class Bench:
                 volts = owner.voltage(pin)
                 return 0.0 if volts is None else float(volts)
         return 0.0
+
+    def _net_waveform(self, terminal: str):
+        """What a scope sees on the net: a device's waveform if it has one, else the net's voltage."""
+        nets = self._nets()
+        net = nets.find(terminal)
+        for source, (owner, pin) in self._sources.items():
+            if nets.find(source) == net and isinstance(owner, Device):
+                waveform = owner.waveform(pin)
+                if waveform is not None:
+                    return waveform
+        return self._net_voltage(terminal)
 
     def _update_devices(self) -> None:
         with self._update_lock:

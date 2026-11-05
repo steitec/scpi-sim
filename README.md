@@ -403,7 +403,7 @@ $ scpi-sim query "INST:NSEL 1;:MEAS:CURR?"
   `signals: {1: {shape: sine, frequency: 1000, vpp: 2}}`).
 - **Wiring**: each line `A -> B` connects two terminals: `<psu>.ch<n>`,
   `<dmm>.input`, `<mux>.<channel>`, `<mux>.common`, `<scope>.ch<n>` (shows
-  the DC voltage of its net) or a node name of your choice. A closed multiplexer relay connects its channel to `common`.
+  the DC voltage of its net, or a device's [waveform](#waveforms-on-the-oscilloscope)) or a node name of your choice. A closed multiplexer relay connects its channel to `common`.
 - **Loads** sit on nodes: `{type: resistor, ohms: 24}` (`ohms: 0` is a short),
   or your own Python class with a `current(volts)` method, e.g. a diode or a
   device that draws constant current:
@@ -490,6 +490,7 @@ wiring:
 | `terminals` | — | `{"name": "input" \| "output"}`; wired as `<device>.<name>` |
 | `current(terminal, volts)` | the supply | amps drawn on an input at that voltage |
 | `voltage(terminal)` | the bench | volts driven on an output; `None` reads as 0 V (the output still counts as a driver of its net) |
+| `waveform(terminal)` | an oscilloscope | a `Signal` or `Transient` for that output; `None` shows `voltage()` as a flat line |
 | `update()` | after every instrument message | look at `input_voltage()`, start timelines |
 | `input_voltage(terminal)` | your code | voltage of the net an input is on |
 | `console.write(text)` | your code | send text to everyone connected to the console (a client that doesn't read loses output, like on a serial line) |
@@ -497,7 +498,7 @@ wiring:
 
 Rules that keep a bench responsive:
 
-- `current()`, `voltage()` and `update()` run in the instruments' threads —
+- `current()`, `voltage()`, `waveform()` and `update()` run in the instruments' threads —
   never block in them. Start a thread for anything that takes time (boot
   sequence) and compute time-dependent values from `time.monotonic()`.
   `console_line()` runs on the console's event loop: don't block there either.
@@ -514,6 +515,57 @@ Rules that keep a bench responsive:
 - An exception in `current()`/`voltage()` becomes `-300` in the error queue of
   the instrument that asked; one in `update()` or `console_line()` is printed
   once and ignored.
+
+### Waveforms on the oscilloscope
+
+A scope channel wired to a device output shows `voltage()` as a flat line. For
+more, give the device a `waveform(terminal)`: a `Signal` repeats forever, a
+`Transient` happens once, for instance at power-on.
+
+```python
+import time
+from scpi_sim import Device, Signal, Transient
+
+class Board(Device):
+    terminals = {"vin": "input", "3V3": "output"}
+    rail = None
+
+    def update(self):
+        if self.input_voltage("vin") >= 10 and self.rail is None:
+            # (seconds after the event, volts); ripple starts when the shape has settled
+            self.rail = Transient(time.monotonic(), ((0, 0), (2e-3, 0), (5e-3, 3.3)),
+                                  ripple=Signal("sine", frequency=300e3, vpp=0.03))
+
+    def waveform(self, terminal):
+        return self.rail
+
+    def voltage(self, terminal):
+        rail = self.rail                     # what a multimeter reads
+        return 0.0 if rail is None else rail.at(time.monotonic() - rail.start)
+```
+
+Then capture it the way you would on the bench: arm, switch on, read.
+
+```python
+scope.query(":TRIG:SOUR CHAN1;:TRIG:LEV 1.65;:SING;:OPER:COND?")  # a query: wait until it is armed
+psu.write("VOLT 12;CURR 3;:OUTP ON")
+while int(scope.query(":OPER:COND?")) & 8:                        # bit 3: still running
+    pass
+codes = scope.query_binary_values(":WAV:DATA?", datatype="B")
+```
+
+The trigger finds the edge in the shape, so a Single armed after the event keeps
+waiting, as on a real scope. To see a current, add an output that gives volts per
+amp, like a current probe or a shunt.
+[`examples/power_on`](https://github.com/steitec/scpi-sim/tree/main/examples/power_on)
+checks inrush, a load step, the rail ramp and its ripple:
+`pytest examples/power_on --scpi-bench examples/power_on/bench.yaml`.
+
+Limits: the part of a capture after the trigger is computed when the trigger
+fires, so switching off right after it does not cut it short. A channel wired
+directly to a supply output shows its DC voltage only.
+
+### Reaching the console
 
 Reach the console with any raw TCP client (`nc localhost 5028`) or with
 pyserial, as `serial.serial_for_url(bench.console_url("board"))`. The complete
