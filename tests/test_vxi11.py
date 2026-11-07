@@ -316,3 +316,37 @@ def test_pyvisa_finds_core_port_through_portmapper(monkeypatch, rm, server, port
     r.read_termination = "\n"
     assert r.query("*IDN?").startswith("scpi-sim,DMM")
     r.close()
+
+
+def test_portmapper_on_free_port_retries_when_udp_port_is_blocked(monkeypatch):
+    # Windows can refuse UDP on the port the OS just gave out for TCP (WinError 10013).
+    import asyncio
+    original = asyncio.BaseEventLoop.create_datagram_endpoint
+    refused = []
+
+    async def refuse_once(self, *args, **kwargs):
+        if not refused:
+            refused.append(kwargs["local_addr"][1])
+            raise PermissionError(13, "forbidden by its access permissions")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio.BaseEventLoop, "create_datagram_endpoint", refuse_once)
+    with PortMapper(port=0) as mapper:
+        assert refused and mapper.port != 0
+        c = RpcClient(mapper.port, PMAP_PROG, 2)
+        assert c.accepted(c.call(0)) == 0
+        c.close()
+
+
+def test_portmapper_on_fixed_port_does_not_retry(monkeypatch):
+    import asyncio
+
+    async def refuse(self, *args, **kwargs):
+        raise PermissionError(13, "forbidden by its access permissions")
+
+    monkeypatch.setattr(asyncio.BaseEventLoop, "create_datagram_endpoint", refuse)
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    with pytest.raises(PermissionError):
+        PortMapper(port=port).start()

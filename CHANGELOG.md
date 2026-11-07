@@ -12,6 +12,10 @@ All notable changes to this project are documented here. The format follows
   first link was cleaned up. Further links stayed open and kept their locks, so other
   clients waited for a lock that was never released. The server also logged
   `RuntimeError: Set changed size during iteration`.
+- Port mapper on a free port (`--portmapper-port 0`, `PortMapper(port=0)`): UDP has to
+  use the TCP port the OS picked, and Windows sometimes refuses that port for UDP
+  (WinError 10013). The port mapper now tries up to five fresh ports. The hint about
+  privileged ports no longer appears for port 0.
 
 ## 0.7.1 - 2026-11-05
 

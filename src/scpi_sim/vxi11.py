@@ -168,6 +168,9 @@ class _RpcServer(TcpServer):
         raise NotImplementedError
 
 
+_FREE_PORT_ATTEMPTS = 5
+
+
 class PortMapper(_RpcServer):
     """The ONC RPC port mapper (version 2) on TCP and UDP; answers GETPORT and DUMP."""
 
@@ -192,6 +195,20 @@ class PortMapper(_RpcServer):
         return None
 
     async def _open(self) -> None:
+        # With port 0 the OS picks a free TCP port, and UDP must get the same number.
+        # That UDP port can be taken or blocked (WinError 10013 on Windows), so try
+        # a few fresh ports before giving up. A fixed port fails at once.
+        requested = self.port
+        for attempt in range(_FREE_PORT_ATTEMPTS):
+            self.port = requested
+            try:
+                await self._open_once()
+                return
+            except OSError:
+                if requested != 0 or attempt == _FREE_PORT_ATTEMPTS - 1:
+                    raise
+
+    async def _open_once(self) -> None:
         await super()._open()
         loop = asyncio.get_running_loop()
         try:
