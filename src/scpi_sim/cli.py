@@ -197,7 +197,7 @@ def _serve_bench(args: argparse.Namespace) -> int:
 
 
 def _portmapper_hint(args: argparse.Namespace, error: OSError) -> None:
-    if (args.vxi11 and not args.no_portmapper and args.portmapper_port < 1024
+    if (args.vxi11 and not args.no_portmapper and 0 < args.portmapper_port < 1024
             and error.errno in (errno.EACCES, errno.EPERM, errno.EADDRINUSE)):
         print(f"scpi-sim: hint: the port mapper needs port {args.portmapper_port}, which takes privileges "
               "(or rpcbind already uses it). Use --no-portmapper and the resource "
