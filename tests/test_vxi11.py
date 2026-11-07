@@ -246,6 +246,16 @@ def test_lock_released_when_connection_closes(rpc):
     assert write(b, lb, b"*OPC?\n", flags=8 | 1, lock_timeout=2000) == 0
 
 
+
+def test_every_link_released_when_connection_closes(rpc):
+    a, b = rpc(), rpc()
+    create_link(a)
+    _, locked = create_link(a, lock=True)  # the second link on the connection holds the lock
+    _, lb = create_link(b)
+    assert write(b, lb, b"*OPC?\n") == 11
+    a.close()
+    assert write(b, lb, b"*OPC?\n", flags=8 | 1, lock_timeout=2000) == 0
+
 def test_unsupported_procedures(rpc):
     c = rpc()
     _, link = create_link(c)
