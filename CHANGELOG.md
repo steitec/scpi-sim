@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- VXI-11: when a client closed its connection without destroying its links, only the
+  first link was cleaned up. Further links stayed open and kept their locks, so other
+  clients waited for a lock that was never released. The server also logged
+  `RuntimeError: Set changed size during iteration`.
+
 ## 0.7.1 - 2026-11-05
 
 ### Fixed

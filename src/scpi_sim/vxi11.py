@@ -253,7 +253,7 @@ class Vxi11Server(_RpcServer):
         return set()  # link ids created on this connection
 
     def _disconnected(self, connection) -> None:
-        for link_id in connection or ():
+        for link_id in list(connection or ()):  # _destroy removes the id from the set
             self._destroy(link_id)
 
     def _destroy(self, link_id: int) -> bool:
