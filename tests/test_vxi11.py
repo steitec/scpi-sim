@@ -5,6 +5,7 @@ import time
 import pyvisa
 import pytest
 
+from scpi_sim import vxi11
 from scpi_sim import Multimeter, PowerSupply
 from scpi_sim import __version__
 from scpi_sim.vxi11 import (DEVICE_CORE_PROG, IPPROTO_TCP, PMAP_PROG, PortMapper, Unpacker, Vxi11Server, pack,
@@ -350,3 +351,49 @@ def test_portmapper_on_fixed_port_does_not_retry(monkeypatch):
         port = s.getsockname()[1]
     with pytest.raises(PermissionError):
         PortMapper(port=port).start()
+
+
+def _refuse_first_udp_bind(monkeypatch):
+    import asyncio
+    original = asyncio.BaseEventLoop.create_datagram_endpoint
+    refused = []
+
+    async def refuse_once(self, *args, **kwargs):
+        if not refused:
+            refused.append(kwargs["local_addr"][1])
+            raise PermissionError(13, "forbidden by its access permissions")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio.BaseEventLoop, "create_datagram_endpoint", refuse_once)
+    return refused
+
+
+def test_portmapper_retry_jumps_out_of_a_blocked_range(monkeypatch):
+    # Windows hands out free ports one after the other and can block 200 in a row for
+    # one protocol, so asking for "any free port" again would only give the next blocked one.
+    _refuse_first_udp_bind(monkeypatch)
+    real_randint = vxi11.random.randint
+    picked = []
+
+    def recording(low, high):
+        assert (low, high) == (49152, 65535)
+        picked.append(real_randint(low, high))
+        return picked[-1]
+
+    monkeypatch.setattr(vxi11.random, "randint", recording)
+    with PortMapper(port=0) as mapper:
+        assert picked and mapper.port == picked[-1]  # a random port can be taken too
+
+
+def test_portmapper_retry_survives_a_tcp_port_in_use(monkeypatch):
+    _refuse_first_udp_bind(monkeypatch)
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        occupied = taken.getsockname()[1]
+        real_randint = vxi11.random.randint
+        answers = [occupied]
+        monkeypatch.setattr(vxi11.random, "randint",
+                            lambda low, high: answers.pop() if answers else real_randint(low, high))
+        with PortMapper(port=0) as mapper:
+            assert not answers and mapper.port != occupied
