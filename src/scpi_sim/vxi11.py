@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import random
 import struct
 
 from .instrument import Instrument
@@ -168,7 +169,8 @@ class _RpcServer(TcpServer):
         raise NotImplementedError
 
 
-_FREE_PORT_ATTEMPTS = 5
+_FREE_PORT_ATTEMPTS = 10
+_DYNAMIC_PORTS = (49152, 65535)  # IANA dynamic range; also the Windows default
 
 
 class PortMapper(_RpcServer):
@@ -196,16 +198,18 @@ class PortMapper(_RpcServer):
 
     async def _open(self) -> None:
         # With port 0 the OS picks a free TCP port, and UDP must get the same number.
-        # That UDP port can be taken or blocked (WinError 10013 on Windows), so try
-        # a few fresh ports before giving up. A fixed port fails at once.
+        # That UDP port can be taken or blocked (WinError 10013 on Windows). Windows gives
+        # out free ports one after the other and can block 200 in a row for one protocol,
+        # so further tries pick a random port. A fixed port fails at once.
         requested = self.port
-        for attempt in range(_FREE_PORT_ATTEMPTS):
-            self.port = requested
+        for attempt in range(_FREE_PORT_ATTEMPTS if requested == 0 else 1):
+            self.port = requested if attempt == 0 else random.randint(*_DYNAMIC_PORTS)
             try:
                 await self._open_once()
                 return
             except OSError:
                 if requested != 0 or attempt == _FREE_PORT_ATTEMPTS - 1:
+                    self.port = requested
                     raise
 
     async def _open_once(self) -> None:
