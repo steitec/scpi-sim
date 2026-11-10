@@ -13,7 +13,7 @@ This directory is not part of the PyPI package.
 | `py/demo.py` | the Python layer: sends messages, injects faults, returns the instrument state |
 | `site/` | the page (HTML, CSS, JavaScript; no framework, no bundler) |
 | `build_site.py` | builds `web/dist`: page, `demo.py`, bench, a wheel of this checkout, Pyodide (pinned by SHA-256) |
-| `nginx.conf`, `Dockerfile` | the container that serves `web/dist` |
+| `nginx.conf`, `Dockerfile`, `build-requirements.txt` | the container that serves `web/dist`; build stage pinned by digest and versions |
 | `tests/` | pytest for `demo.py` and the build, Playwright for the page |
 
 ## Build and run

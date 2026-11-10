@@ -3,7 +3,8 @@
     python web/build_site.py [--out DIR]
 
 Puts together the page (web/site), the demo layer (web/py/demo.py), the example
-bench, a scpi-sim wheel built from this checkout, and the Pyodide runtime. Pyodide
+bench, a scpi-sim wheel built from this checkout, and the Pyodide runtime, plus
+a gzip copy of the larger text and WebAssembly files for nginx's gzip_static. Pyodide
 is downloaded once into web/.cache and only used when its SHA-256 matches the
 pinned value, so a changed or tampered download stops the build.
 """
@@ -11,6 +12,7 @@ pinned value, so a changed or tampered download stops the build.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import shutil
@@ -58,6 +60,19 @@ def fetch(url: str, sha256: str, cache: Path) -> Path:
     return path
 
 
+# nginx serves these as file.gz (gzip_static) instead of compressing them per request;
+# the same types and minimum size as gzip_types / gzip_min_length in nginx.conf
+PRECOMPRESS = (".wasm", ".js", ".mjs", ".json", ".css", ".svg", ".html")
+GZIP_MIN_LENGTH = 1024
+
+
+def precompress(out: Path) -> None:
+    for path in sorted(out.rglob("*")):
+        if path.suffix in PRECOMPRESS and path.is_file() and path.stat().st_size >= GZIP_MIN_LENGTH:
+            # mtime=0: the same input gives the same file
+            path.with_name(path.name + ".gz").write_bytes(gzip.compress(path.read_bytes(), 9, mtime=0))
+
+
 def build_wheel(out: Path) -> Path:
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run([sys.executable, "-m", "build", "--wheel", "--outdir", tmp, str(ROOT)],
@@ -91,6 +106,7 @@ def build(out: Path) -> None:
             with tar.extractfile(member) as source, open(pyodide / name, "wb") as target:
                 shutil.copyfileobj(source, target)
     shutil.copy2(fetch(*PYYAML, cache), pyodide)
+    precompress(out)
     print(f"built {out} (scpi-sim {version}, Pyodide {PYODIDE_VERSION})")
 
 

@@ -264,3 +264,65 @@ test("catching a board's power-on", async ({ page }) => {
   await expect(id(page, "terminal-output")).toContainText(/2\.[0-9]+e-01/); // 0.22 V at 100 mV/A: 2.2 A
   await expect(id(page, "terminal-output")).toContainText(/3\.[0-9]+e\+00/);
 });
+
+test("the echo shows the line as the instrument got it", async ({ page }) => {
+  await ready(page);
+  await id(page, "terminal-input").evaluate((input) => { input.value = "*IDN?\u0007"; });
+  await id(page, "terminal-input").press("Enter");
+  await expect(id(page, "terminal-output")).toContainText("Rohde&Schwarz,HMP4040");
+  expect(await lines(page)).toContain("psu> *IDN?");
+});
+
+test("a ? inside an argument is no query", async ({ page }) => {
+  await ready(page);
+  await id(page, "terminal-input").fill('FOO "what?"');
+  await id(page, "terminal-input").press("Enter");
+  await expect(id(page, "terminal-output")).toContainText("(ok, no response)", { timeout: 1_500 });
+  expect((await lines(page)).some((line) => line.includes("VI_ERROR_TMO"))).toBe(false);
+});
+
+test("a tour button moves the prompt when its step runs", async ({ page }) => {
+  await ready(page);
+  await id(page, "fault-daq-no-response").click();
+  await id(page, "chip-4").click(); // daq, then a 2 s timeout
+  await id(page, "chip-1").click(); // psu, waits in the queue
+  await expect(page.locator("#prompt-label")).toHaveText("daq>");
+  await expect(id(page, "terminal-output")).toContainText("VI_ERROR_TMO", { timeout: 10_000 });
+  await expect(page.locator("#prompt-label")).toHaveText("psu>");
+});
+
+test("↑ and ↓ keep what was being typed", async ({ page }) => {
+  await ready(page);
+  const input = id(page, "terminal-input");
+  await input.fill("*IDN?");
+  await input.press("Enter");
+  await input.fill("VOLT 3");
+  await input.press("ArrowUp");
+  await expect(input).toHaveValue("*IDN?");
+  await input.press("ArrowDown");
+  await expect(input).toHaveValue("VOLT 3");
+});
+
+test("the DAQ display shows the unit of what it measured", async ({ page }) => {
+  await ready(page);
+  await id(page, "target-daq").click();
+  await id(page, "terminal-input").fill("MEAS:RES? (@102)");
+  await id(page, "terminal-input").press("Enter");
+  await expect(id(page, "daq-display")).toContainText(/(Ω|OVLD Ω)\s+·\s+CH 102/);
+  await expect(id(page, "daq-display")).not.toContainText("VDC");
+});
+
+test("a Python error in the fallback shows only its last line", async ({ page }) => {
+  await page.route("**/py/demo.py", (route) => route.fulfill({ body: "raise RuntimeError('boom')\n" }));
+  await page.goto("/");
+  await expect(id(page, "fallback")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("#fallback-reason")).toHaveText("(RuntimeError: boom)");
+});
+
+test("headers: precompressed runtime, no interest-cohort", async ({ request }) => {
+  const manifest = await (await request.get("/py/manifest.json")).json();
+  const wasm = await request.get(`/pyodide/${manifest.pyodide}/pyodide.asm.wasm`, { headers: { "Accept-Encoding": "gzip" } });
+  expect(wasm.headers()["content-encoding"]).toBe("gzip");
+  expect(wasm.headers()["vary"]).toContain("Accept-Encoding");
+  expect((await request.get("/")).headers()["permissions-policy"]).toBeUndefined();
+});

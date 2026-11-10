@@ -3,9 +3,12 @@
 #
 #   docker build -f web/Dockerfile -t scpi-sim-web .
 #   docker run --rm -p 8080:80 scpi-sim-web
-FROM python:3.15-slim AS build
-RUN pip install --no-cache-dir "build>=1.2"
+# pinned by digest; Dependabot (docker, /web) moves it, the build tools are in build-requirements.txt
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS build
 WORKDIR /src
+COPY web/build-requirements.txt ./web/
+RUN pip install --no-cache-dir -r web/build-requirements.txt
+ENV PIP_CONSTRAINT=/src/web/build-requirements.txt
 COPY pyproject.toml README.md LICENSE CHANGELOG.md MANIFEST.in ./
 COPY src ./src
 COPY examples ./examples

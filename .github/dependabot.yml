@@ -9,6 +9,14 @@ updates:
     groups:
       pip:
         patterns: ["*"]
+  - package-ecosystem: "pip"
+    directory: "/web"   # build-requirements.txt of the demo image
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    groups:
+      pip-web:
+        patterns: ["*"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

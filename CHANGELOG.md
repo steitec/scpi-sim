@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Changed
+
+- Browser demo: the terminal echoes the line as the instrument got it (cut to 256
+  characters, no control characters). A tour button moves the prompt to each step's
+  instrument when that step runs, not on the click. ↑/↓ through the history keeps what
+  was being typed. A `?` inside an argument (`FOO "what?"`) no longer counts as a query
+  that times out. The DAQ display shows the unit of the last reading (VDC or Ω). The
+  fallback after a failed start shows only the last line of a Python traceback.
+- Browser demo image: the runtime and the page are gzip-compressed at build time
+  (`gzip_static`), the build stage is pinned by digest and the build tools by version
+  (`web/build-requirements.txt`), and the `Permissions-Policy: interest-cohort=()`
+  header is gone.
+
 ## 0.7.3 - 2026-11-09
 
 ### Fixed
