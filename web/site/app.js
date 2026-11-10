@@ -57,6 +57,7 @@ let target = "psu";
 let queue = Promise.resolve();
 const history = [];
 let historyAt = 0;
+let draft = ""; // what was typed before ↑ went into the history
 let busy = 0;
 let scopeVisible = true;
 
@@ -86,8 +87,19 @@ function buildFronts() {
   for (const number of RELAYS) relays.append(el("span", { class: "relay", id: `relay-${number}` }, String(number)));
 }
 
+const OVERLOAD = 9.9e37; // what a multimeter returns for an overrange reading
 const volts = (v) => `${v.toFixed(3)} V`;
 const amps = (a) => `${a.toFixed(3)} A`;
+
+// the DAQ's display: DC volts with four decimals, resistance in Ω, kΩ or MΩ
+function reading({ function: kind, value }) {
+  if (Math.abs(value) >= OVERLOAD) return kind === "RES" ? "OVLD Ω" : "OVLD VDC";
+  if (kind === "RES") {
+    const [factor, prefix] = [[1e6, "M"], [1e3, "k"], [1, ""]].find(([f]) => Math.abs(value) >= f) ?? [1, ""];
+    return `${(value / factor).toFixed(4)} ${prefix}Ω`;
+  }
+  return `${value >= 0 ? "+" : ""}${value.toFixed(4)} VDC`;
+}
 
 function showBadges(prefix, state) {
   byTestId(`${prefix}-err`).hidden = !state.error;
@@ -113,9 +125,7 @@ function render(state) {
   showBadges("psu", psu);
 
   const daq = state.daq;
-  byTestId("daq-display").textContent = daq.last
-    ? `${daq.last.value >= 0 ? "+" : ""}${daq.last.value.toFixed(4)} VDC  ·  CH ${daq.last.channel}`
-    : "– – –";
+  byTestId("daq-display").textContent = daq.last ? `${reading(daq.last)}  ·  CH ${daq.last.channel}` : "– – –";
   for (const number of RELAYS) {
     const relay = $(`#relay-${number}`);
     relay.classList.toggle("closed", daq.closed.includes(number));
@@ -230,8 +240,14 @@ function print(text, kind = "") {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// a Python exception arrives with its whole traceback; the last line says what went wrong
+function lastLine(error) {
+  const lines = String(error?.message ?? error).trim().split("\n");
+  return lines[lines.length - 1].trim();
+}
+
 function enqueue(job) {
-  queue = queue.then(job).catch((error) => print(`internal error: ${error.message}`, "error"));
+  queue = queue.then(job).catch((error) => print(`internal error: ${lastLine(error)}`, "error"));
   return queue;
 }
 
@@ -243,11 +259,13 @@ function setTarget(name) {
   $("#prompt-label").textContent = `${name}>`;
 }
 
-function send(to, line) {
+// switch: a tour button moves the prompt to each step's instrument when that step runs
+function send(to, line, { switch: switchTarget = false } = {}) {
   busy++;
   enqueue(async () => {
-    print(`${to}> ${line}`, "command");
+    if (switchTarget) setTarget(to);
     const result = await sim.send(to, line);
+    print(`${to}> ${result.line}`, "command"); // as the instrument got it: cut, no control characters
     if (result.timeout) {
       await sleep(TIMEOUT_MS);
       print(TIMEOUT_TEXT, "timeout");
@@ -280,10 +298,7 @@ function addChips(parent, list, first) {
     button.append(el("span", { class: "step" }, String(first + i)), el("span", {}, chip.label),
                   el("code", {}, chip.steps.map(([to, line]) => `${to}> ${line}`).join("  ·  ")));
     button.addEventListener("click", () => {
-      for (const [to, line] of chip.steps) {
-        setTarget(to);
-        send(to, line);
-      }
+      for (const [to, line] of chip.steps) send(to, line, { switch: true });
     });
     parent.append(button);
   });
@@ -302,14 +317,16 @@ function wire() {
     if (!line) return;
     history.push(line);
     historyAt = history.length;
+    draft = "";
     input.value = "";
     send(target, line);
   });
   input.addEventListener("keydown", (event) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     event.preventDefault();
+    if (historyAt === history.length) draft = input.value;
     historyAt = Math.max(0, Math.min(history.length, historyAt + (event.key === "ArrowUp" ? -1 : 1)));
-    input.value = history[historyAt] ?? "";
+    input.value = historyAt === history.length ? draft : history[historyAt];
   });
   for (const button of document.querySelectorAll("[data-fault]")) {
     button.addEventListener("click", () => inject(button.dataset.fault));
@@ -326,7 +343,7 @@ async function start() {
   } catch (error) {
     document.body.classList.replace("loading", "failed");
     status.textContent = "could not start";
-    $("#fallback-reason").textContent = `(${error.message})`;
+    $("#fallback-reason").textContent = `(${lastLine(error)})`;
     byTestId("fallback").hidden = false;
     return;
   }

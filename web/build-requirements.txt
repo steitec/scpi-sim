@@ -1,0 +1,5 @@
+# Build tools for the demo's Docker image (web/Dockerfile), pinned so a rebuild of a
+# release tag uses the same versions. Also the constraint for setuptools in the isolated
+# build environment of the wheel (PIP_CONSTRAINT). Dependabot keeps them current.
+build==1.6.1
+setuptools==84.2.1

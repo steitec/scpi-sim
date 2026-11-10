@@ -5,7 +5,8 @@ and ``reset`` and draws the instrument fronts from the returned state, so every
 value it shows comes from the simulator itself. No sockets: the bench is never
 started, messages go straight to ``Instrument.process``.
 
-The state reads a few private attributes of the HMP4040, DAQ970A and DS1054Z models;
+The state reads a few private attributes of the HMP4040, DAQ970A and DS1054Z models
+(the DAQ's ``_config`` for the function of the last reading);
 the demo is always built from the same release as the package, and
 web/tests/test_demo.py pins what it relies on.
 """
@@ -13,6 +14,7 @@ web/tests/test_demo.py pins what it relies on.
 from __future__ import annotations
 
 from scpi_sim.bench import Bench
+from scpi_sim.scpi.parser import Command, parse_message
 
 # button name -> (instrument, fault kind, parameters)
 FAULTS: dict[str, tuple[str, str, dict]] = {
@@ -33,6 +35,11 @@ SCOPE_SETUP = ":TIM:SCAL 0.0002;:CHAN1:SCAL 0.5"
 
 def _clean(line: str) -> str:
     return "".join(ch for ch in line[:MAX_LINE] if ch == "\t" or ch.isprintable())
+
+
+def _is_query(line: str) -> bool:
+    """True if a command in the message is a query; a ``?`` inside an argument does not count."""
+    return any(isinstance(unit, Command) and unit.is_query for unit in parse_message(line))
 
 
 def _printable(response: str | bytes | None) -> str | None:
@@ -66,7 +73,8 @@ class Demo:
         instrument = self._instrument(target)
         line = _clean(line)
         response = instrument.process(line)
-        return {"response": _printable(response), "timeout": response is None and "?" in line, "state": self.state()}
+        return {"line": line, "response": _printable(response), "timeout": response is None and _is_query(line),
+                "state": self.state()}
 
     def inject(self, fault: str) -> dict:
         if fault not in FAULTS:
@@ -100,7 +108,9 @@ class Demo:
         daq = self.daq
         last = None
         if daq._readings:
-            last = {"channel": daq._scan[len(daq._readings) - 1], "value": daq._readings[-1]}
+            channel = daq._scan[len(daq._readings) - 1]
+            function = daq._config.get(channel, ("VOLT", None))[0]
+            last = {"channel": channel, "function": function, "value": daq._readings[-1]}
         return {"model": daq.model, "closed": sorted(daq.closed), "last": last,
                 "error": bool(daq._errors), "faults": sorted(daq.faults)}
 

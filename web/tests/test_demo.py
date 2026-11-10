@@ -107,6 +107,27 @@ def test_unknown_target_or_fault(demo):
         demo.inject("nope")
 
 
+def test_echo_is_the_line_that_was_sent(demo):
+    # the terminal shows what the instrument got: cut and without control characters
+    assert demo.send("psu", "*IDN?\x1b[31m")["line"] == "*IDN?[31m"
+    assert demo.send("psu", "X" * 300)["line"] == "X" * 256
+
+
+def test_question_mark_in_an_argument_is_no_query(demo):
+    assert demo.send("psu", 'FOO "what?"')["timeout"] is False
+    assert demo.send("psu", "VOLT 5;FOO?")["timeout"] is True
+    assert demo.send("psu", "*CLS;:FOO:BAR? 1")["timeout"] is True
+
+
+def test_daq_reading_carries_its_function(demo):
+    demo.send("psu", POWER_ON)
+    demo.send("daq", "MEAS:VOLT:DC? (@101)")
+    assert demo.state()["daq"]["last"]["function"] == "VOLT"
+    demo.send("daq", "MEAS:RES? (@102)")
+    assert demo.state()["daq"]["last"] == {"channel": 102, "function": "RES",
+                                           "value": demo.state()["daq"]["last"]["value"]}
+
+
 # --- the oscilloscope ----------------------------------------------------------------------
 
 
