@@ -1,6 +1,6 @@
 """Simulated SCPI lab instruments on a raw TCP socket."""
 
-__version__ = "0.7.3"
+__version__ = "0.7.4"
 
 from .instrument import Instrument, scpi  # noqa: E402
 from .instruments import Multimeter, Multiplexer, Oscilloscope, PowerSupply, Signal, Transient  # noqa: E402
