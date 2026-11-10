@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## 0.7.4 - 2026-11-10
 
+### Fixed
+
+- `examples/power_on`: the ripple test waited with `time.sleep(0.01)`, but the simulator
+  measures time with `time.monotonic()`, which moves in steps of up to 16 ms on Windows.
+  The sleep could end before the simulator saw any time pass, so the scope captured the
+  rail before it had settled and read 0 V of ripple. The test now waits by that clock.
+
 ### Changed
 
 - Browser demo: the terminal echoes the line as the instrument got it (cut to 256

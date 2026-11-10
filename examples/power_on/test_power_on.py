@@ -24,6 +24,14 @@ def station(scpi_bench):
     rm.close()
 
 
+def wait(seconds):
+    """Wait by the simulator's clock, time.monotonic(). On Windows it moves in steps of
+    up to 16 ms, so a plain time.sleep() can end before the simulator sees any time pass."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        time.sleep(0.001)
+
+
 def power_on_capture(psu, scope):
     """Arm a single capture on the rising edge of the current, then switch the board on."""
     scope.write(":CHAN1:DISP ON;:CHAN1:SCAL 0.05;:CHAN1:OFFS 0.15")
@@ -91,7 +99,7 @@ def test_rail_comes_up_after_the_inrush(station):
 def test_ripple_on_the_running_rail(station):
     psu, scope = station
     psu.query("VOLT 12;CURR 3;:OUTP ON;*OPC?")
-    time.sleep(0.01)
+    wait(0.01)  # the rail has settled after 5 ms; the ripple starts then
     scope.write(":CHAN1:DISP OFF;:CHAN2:DISP ON;:CHAN2:COUP AC;:CHAN2:SCAL 0.01;:CHAN2:OFFS 0")
     scope.write(":TIM:SCAL 2e-6;:TIM:POS 0;:TRIG:SOUR CHAN2;:TRIG:SWE AUTO;:RUN")
     assert float(scope.query(":MEAS:VPP? CHAN2")) == pytest.approx(0.03, abs=0.025)
