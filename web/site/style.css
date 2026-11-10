@@ -167,6 +167,8 @@ main > section:not(.bench) { margin-bottom: 40px; }
 pre { background: var(--term-bg); color: var(--term); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font: 13px/1.5 var(--mono); }
 .more ul { padding-left: 20px; }
 .more li { margin-bottom: 6px; }
+.hire { margin-top: 24px; }
+.hire p { max-width: 820px; }
 .links { display: flex; flex-wrap: wrap; gap: 8px 20px; }
 
 footer { padding-top: 16px; padding-bottom: 32px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
