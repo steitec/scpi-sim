@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.7.5 - 2026-11-15
+
+### Changed
+
+- Browser demo: a contact section ("Need this for your own bench?") with links to
+  steitec.net and hello@steitec.net, an imprint link in the footer, and the privacy
+  notice names hello@steitec.net and the steitec.net imprint as the contact.
+
 ## 0.7.4 - 2026-11-10
 
 ### Fixed
