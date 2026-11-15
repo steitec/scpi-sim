@@ -326,3 +326,13 @@ test("headers: precompressed runtime, no interest-cohort", async ({ request }) =
   expect(wasm.headers()["vary"]).toContain("Accept-Encoding");
   expect((await request.get("/")).headers()["permissions-policy"]).toBeUndefined();
 });
+
+test("contact and imprint are one click away", async ({ page }) => {
+  await page.goto("/");
+  await expect(id(page, "hire")).toBeVisible();
+  await expect(id(page, "contact")).toHaveAttribute("href", "mailto:hello@steitec.net");
+  await expect(id(page, "imprint")).toHaveAttribute("href", "https://www.steitec.net/en/imprint");
+  await page.goto("/privacy.html");
+  await expect(page.locator("main")).toContainText("hello@steitec.net");
+  await expect(page.locator('a[href="https://www.steitec.net/en/imprint"]')).toBeVisible();
+});
